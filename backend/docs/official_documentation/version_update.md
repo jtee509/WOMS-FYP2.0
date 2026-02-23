@@ -7,6 +7,20 @@ Version scheme: `PRE-ALPHA vX.Y.Z`
 
 ---
 
+## [PRE-ALPHA v0.4.3 | 2026-02-23 ~23:00] — README overhaul + remove planning_phase from git
+
+**What changed:** README.md was completely rewritten to reflect the current project state (backend/ layout, actual endpoints, setup_env.py workflow). The `planning_phase/` docs folder was removed from git tracking (files remain on disk but are gitignored).
+
+### Changes Made
+
+| File | Change | Why |
+|---|---|---|
+| `README.md` | Rewritten: accurate project layout, actual API endpoints, setup_env.py instructions, correct env vars table, links to official docs | Old README was from v0.1.0; referenced non-existent files and commands |
+| `.gitignore` | Added `backend/docs/planning_phase/` and `docs/planning_phase/` patterns | Internal design notes should not be published to GitHub |
+| `backend/docs/planning_phase/` (5 files) | Removed from git index (`git rm --cached`) — files stay on disk | Planning docs are internal; not relevant to users cloning the repo |
+
+---
+
 ## [PRE-ALPHA v0.4.2 | 2026-02-23 ~22:30] — setup_env.py: Auto-generate .env + provision PostgreSQL
 
 **What changed:** Added `setup_env.py` at the project root — a one-command tool that generates all secrets and DB credentials, creates the PostgreSQL user and both databases, then writes a complete `.env` with no placeholder values.

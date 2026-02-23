@@ -1,218 +1,230 @@
-# WOMS - Warehouse Order Management System
+# WOMS — Warehouse Order Management System
 
-A production-ready FastAPI backend for managing warehouse operations, inventory, orders, and deliveries.
+A FastAPI backend for warehouse operations: multi-platform order ingestion (Shopee, Lazada, TikTok), inventory management, delivery tracking, and an ML staging pipeline.
+
+**Status:** PRE-ALPHA v0.4.2 · Python 3.13 · PostgreSQL 13+
+
+---
 
 ## Features
 
-- **Items Management** - Products, variations, categories, brands with version control
-- **Inventory Control** - Stock levels, locations, movements, batch/lot tracking
-- **Order Processing** - Multi-platform e-commerce integration, order fulfillment
-- **Delivery Management** - Drivers, vehicles, trips, real-time tracking
-- **User Administration** - Role-based access, comprehensive audit logging
-- **Version Control Snapshots** - JSONB-based change tracking for compliance
+| Area | What it does |
+|------|-------------|
+| **Order Import ETL** | Parse and stage CSV/XLSX orders from Shopee, Lazada, and TikTok into `order_import_staging` |
+| **Reference Data** | Load platforms, sellers, and item master (SKU catalogue) via admin endpoints |
+| **ML Staging DB** | Separate `ml_woms_db` database; sync staged orders for ML training |
+| **Inventory** | Stock levels, locations, movements, batch/lot tracking |
+| **Delivery** | Drivers, vehicles, trips, real-time tracking |
+| **Users** | Role-based access, audit logging |
+
+---
 
 ## Tech Stack
 
-- **Framework**: FastAPI
-- **ORM**: SQLModel (SQLAlchemy + Pydantic)
-- **Database**: PostgreSQL with JSONB support
-- **Migrations**: Alembic
-- **Authentication**: JWT (python-jose)
-- **Async Support**: asyncpg
+| Layer | Technology |
+|-------|-----------|
+| Framework | FastAPI 0.111 |
+| ORM | SQLModel 0.0.31 (SQLAlchemy 2 + Pydantic 2) |
+| Database | PostgreSQL 13+ with JSONB, triggers, views |
+| Async driver | asyncpg 0.31 |
+| Sync driver | psycopg 3 (Alembic migrations) |
+| Migrations | Alembic 1.13 |
+| Auth | JWT via python-jose |
 
-## Project Structure
+---
+
+## Project Layout
 
 ```
-woms-backend/
-├── app/
-│   ├── __init__.py
-│   ├── main.py              # FastAPI application entry point
-│   ├── config.py            # Configuration management
-│   ├── database.py          # Database connection & schema
-│   └── models/
-│       ├── __init__.py      # Model exports
-│       ├── items.py         # Items, Status, Brand, Category, etc.
-│       ├── warehouse.py     # Warehouse, Locations, Inventory
-│       ├── orders.py        # Orders, Platforms, Sellers
-│       ├── delivery.py      # Drivers, Trips, Tracking
-│       └── users.py         # Users, Roles, Audit
-├── alembic/
-│   ├── env.py               # Alembic environment
-│   ├── script.py.mako       # Migration template
-│   └── versions/            # Migration files
-├── requirements.txt
-├── .env.template
-├── setup.py                 # One-click setup script
-├── alembic.ini
-└── README.md
+WOMS-FYP-NEW/                       ← repository root
+├── .env                            ← secrets (git-ignored, auto-generated)
+├── .env.template                   ← safe template committed to git
+├── setup_env.py                    ← auto-generates .env + provisions PostgreSQL
+├── setup.py                        ← one-click venv + deps setup
+│
+└── backend/                        ← all application code
+    ├── alembic/                    ← migration scripts
+    │   └── versions/               ← 8 migration files (head: e6f7a8b9c0d1)
+    ├── alembic.ini
+    ├── requirements.txt
+    │
+    ├── app/
+    │   ├── main.py                 ← FastAPI app, lifespan hooks
+    │   ├── config.py               ← pydantic-settings, reads .env from root
+    │   ├── database.py             ← async engine, init_db(), run_migrations()
+    │   ├── ml_database.py          ← separate engine for ml_woms_db
+    │   │
+    │   ├── models/                 ← 49 SQLModel table classes
+    │   │   ├── items.py            ← product catalogue, SKUs, version history
+    │   │   ├── warehouse.py        ← locations, inventory, alerts
+    │   │   ├── orders.py           ← orders, platforms, sellers
+    │   │   ├── order_operations.py ← returns, cancellations
+    │   │   ├── delivery.py         ← drivers, trips, tracking
+    │   │   ├── users.py            ← auth, roles, audit
+    │   │   ├── order_import.py     ← raw + staging import tables
+    │   │   ├── triggers.py         ← PostgreSQL triggers (Python-managed)
+    │   │   ├── views.py            ← PostgreSQL views (Python-managed)
+    │   │   └── seed.py             ← lookup-table seed data
+    │   │
+    │   ├── routers/
+    │   │   ├── order_import.py     ← POST /api/v1/orders/import
+    │   │   ├── reference.py        ← POST /api/v1/reference/load-*
+    │   │   └── ml_sync.py          ← POST /api/v1/ml/sync
+    │   │
+    │   ├── services/
+    │   │   ├── order_import/       ← parser → cleaner → mapper → importer
+    │   │   ├── reference_loader/   ← platform / seller / item-master loaders
+    │   │   └── ml_sync/            ← staging → ml_woms_db sync
+    │   │
+    │   └── migrations/             ← deprecated SQL reference files (not executed)
+    │
+    └── docs/
+        └── official_documentation/
+            ├── database_structure.md   ← full schema reference
+            └── version_update.md       ← changelog (PRE-ALPHA vX.Y.Z)
 ```
 
-## Database Schema
-
-> **Full Documentation:** See [docs/DATABASE.md](docs/DATABASE.md) for complete schema documentation including all tables, columns, relationships, indexes, triggers, and views.
-
-### Module Overview
-
-| Module | Tables | Purpose |
-|--------|--------|---------|
-| **Items** | 8 tables | Product catalog, variations, version history |
-| **Warehouse** | 11 tables | Physical locations, inventory tracking, alerts |
-| **Orders** | 8 tables | Order processing, platform integration, raw imports |
-| **Delivery** | 9 tables | Fleet management, trip tracking |
-| **Users** | 3 tables | Authentication, authorization, audit |
-
-### Key Features
-
-1. **Version Control Snapshots** - Items history with JSONB for field-level change tracking
-2. **Multi-Platform Support** - Translator table bridges platform SKUs to internal items
-3. **Flexible Storage** - JSONB fields for addresses, customer data, permissions
-4. **Batch/Lot Tracking** - Support for FIFO, LIFO, FEFO inventory methods
-5. **Inventory Alerts** - Automatic low stock alerts with PostgreSQL triggers
-6. **Raw Data Preservation** - Store Excel/API imports for auditing
+---
 
 ## Quick Start
 
 ### Prerequisites
 
-- Python 3.10+
+- Python 3.13
 - PostgreSQL 13+
-- Git
 
-### Installation
+### 1 — Clone
 
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd woms-backend
-   ```
+```bash
+git clone https://github.com/jtee509/WOMS-FYP2.0.git
+cd WOMS-FYP2.0
+```
 
-2. **Run the setup script**
-   ```bash
-   python setup.py
-   ```
+### 2 — Install dependencies
 
-   Or manually:
-   ```bash
-   # Create virtual environment
-   python -m venv venv
-   
-   # Activate (Windows)
-   .\venv\Scripts\activate
-   
-   # Activate (Linux/Mac)
-   source venv/bin/activate
-   
-   # Install dependencies
-   pip install -r requirements.txt
-   ```
+```bash
+pip install -r backend/requirements.txt
+```
 
-3. **Configure environment**
-   ```bash
-   # Copy template
-   cp .env.template .env
-   
-   # Edit with your settings
-   # - DATABASE_HOST, DATABASE_PORT, DATABASE_NAME
-   # - DATABASE_USER, DATABASE_PASSWORD
-   # - SECRET_KEY (generate with: openssl rand -hex 32)
-   ```
+### 3 — Generate `.env` and provision databases
 
-4. **Create PostgreSQL database**
-   ```sql
-   CREATE DATABASE woms_db;
-   ```
+```bash
+python setup_env.py
+```
 
-5. **Initialize the database**
-   ```bash
-   # Option 1: Full initialization - tables + triggers + indexes + views (recommended)
-   python -c "import asyncio; from app.database import init_db_full; asyncio.run(init_db_full())"
-   
-   # Option 2: Tables only (then run migrations separately)
-   python -c "import asyncio; from app.database import init_db; asyncio.run(init_db())"
-   
-   # Option 3: Using Alembic migrations (production)
-   alembic revision --autogenerate -m "Initial schema"
-   alembic upgrade head
-   python -c "import asyncio; from app.database import run_migrations; asyncio.run(run_migrations())"
-   ```
+This will:
+- Generate a 256-bit `SECRET_KEY` and a random database password
+- Create PostgreSQL user `woms_user` with the generated password
+- Create `woms_db` (production) and `ml_woms_db` (ML staging), owned by `woms_user`
+- Write a complete `.env` to the project root
 
-6. **Start the development server**
-   ```bash
-   uvicorn app.main:app --reload
-   ```
+You will be prompted once for your PostgreSQL admin password. It is never stored.
 
-7. **Access the API**
-   - Swagger UI: http://localhost:8000/docs
-   - ReDoc: http://localhost:8000/redoc
-   - Health Check: http://localhost:8000/health
+> **Skip DB provisioning?** Use `python setup_env.py --generate-only` to only write the `.env` and run the SQL manually (the script prints the statements).
+
+### 4 — Run migrations
+
+```bash
+cd backend
+../python -m alembic upgrade head
+```
+
+### 5 — Start the server
+
+```bash
+cd backend
+../python -m uvicorn app.main:app --reload
+```
+
+### 6 — Open the docs
+
+| URL | Description |
+|-----|-------------|
+| http://localhost:8000/docs | Swagger UI |
+| http://localhost:8000/redoc | ReDoc |
+| http://localhost:8000/health | Health check |
+
+---
+
+## API Endpoints
+
+### Order Import
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/orders/import` | Upload Shopee / Lazada / TikTok CSV or XLSX |
+
+**Form fields:** `platform` (shopee / lazada / tiktok), `seller_id` (int), `file` (upload)
+
+### Reference Data
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/reference/load-platforms` | Upload platform list XLSX |
+| `POST` | `/api/v1/reference/load-sellers` | Upload seller list XLSX |
+| `POST` | `/api/v1/reference/load-items` | Upload item master XLSX |
+
+### ML Staging
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/ml/sync` | Copy staged orders → `ml_woms_db` |
+| `POST` | `/api/v1/ml/init-schema` | Initialise `ml_woms_db` schema |
+
+---
 
 ## Database Migrations
 
 ```bash
-# Create a new migration
-alembic revision --autogenerate -m "Description of changes"
+cd backend
 
-# Apply migrations
-alembic upgrade head
+# Apply all pending migrations
+../python -m alembic upgrade head
 
-# Rollback one migration
-alembic downgrade -1
+# Current migration head
+../python -m alembic current
 
-# View migration history
-alembic history
+# Generate a new migration after model changes
+../python -m alembic revision --autogenerate -m "describe change"
+
+# Roll back one migration
+../python -m alembic downgrade -1
 ```
 
-## API Endpoints (Planned)
+Current migration head: `e6f7a8b9c0d1`
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/v1/items` | GET, POST | List/Create items |
-| `/api/v1/items/{id}` | GET, PUT, DELETE | Item CRUD |
-| `/api/v1/warehouse` | GET, POST | Warehouse management |
-| `/api/v1/inventory` | GET | Inventory levels |
-| `/api/v1/orders` | GET, POST | Order processing |
-| `/api/v1/delivery/trips` | GET, POST | Trip management |
-| `/api/v1/users` | GET, POST | User administration |
+---
 
 ## Environment Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DATABASE_HOST` | PostgreSQL host | localhost |
-| `DATABASE_PORT` | PostgreSQL port | 5432 |
-| `DATABASE_NAME` | Database name | woms_db |
-| `DATABASE_USER` | Database user | postgres |
-| `DATABASE_PASSWORD` | Database password | - |
-| `SECRET_KEY` | JWT signing key | - |
-| `DEBUG` | Enable debug mode | false |
-| `CORS_ORIGINS` | Allowed CORS origins | localhost |
+| `DATABASE_HOST` | PostgreSQL host | `localhost` |
+| `DATABASE_PORT` | PostgreSQL port | `5432` |
+| `DATABASE_NAME` | Production database | `woms_db` |
+| `DATABASE_USER` | App DB user | `woms_user` |
+| `DATABASE_PASSWORD` | App DB password | _(generated)_ |
+| `DATABASE_URL` | Full async URL | _(assembled)_ |
+| `DATABASE_URL_SYNC` | Full sync URL (Alembic) | _(assembled)_ |
+| `ML_DATABASE_NAME` | ML staging database | `ml_woms_db` |
+| `ML_DATABASE_URL` | Full ML async URL | _(assembled)_ |
+| `SECRET_KEY` | JWT signing key (256-bit) | _(generated)_ |
+| `DEBUG` | Enable debug / SQL logging | `false` |
+| `CORS_ORIGINS` | Allowed CORS origins | `localhost:3000, 5173` |
 
-## Development
+All values are auto-populated by `setup_env.py`. See `.env.template` for the full list.
 
-### Running Tests
-```bash
-pytest
-```
+---
 
-### Type Checking
-```bash
-mypy app/
-```
+## Documentation
 
-### Code Formatting
-```bash
-black app/
-isort app/
-```
+| File | Contents |
+|------|----------|
+| [`backend/docs/official_documentation/database_structure.md`](backend/docs/official_documentation/database_structure.md) | Full schema: all 49 tables, columns, indexes, triggers, views |
+| [`backend/docs/official_documentation/version_update.md`](backend/docs/official_documentation/version_update.md) | Changelog — every change logged with version + timestamp |
+
+---
 
 ## License
 
-MIT License - See LICENSE file for details.
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
+MIT License — see LICENSE file for details.
