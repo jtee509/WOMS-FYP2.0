@@ -7,6 +7,34 @@ Version scheme: `PRE-ALPHA vX.Y.Z`
 
 ---
 
+## [PRE-ALPHA v0.4.2 | 2026-02-23 ~22:30] — setup_env.py: Auto-generate .env + provision PostgreSQL
+
+**What changed:** Added `setup_env.py` at the project root — a one-command tool that generates all secrets and DB credentials, creates the PostgreSQL user and both databases, then writes a complete `.env` with no placeholder values.
+
+### Changes Made
+
+| File | Change | Why |
+|---|---|---|
+| `setup_env.py` (new) | Auto-generates `SECRET_KEY` (256-bit hex), DB password (`token_urlsafe`), creates `woms_user` + `woms_db` + `ml_woms_db` in PostgreSQL, writes complete `.env` | Eliminates manual credential setup; every install gets unique secure keys |
+
+### How it works
+- `SECRET_KEY` — `secrets.token_hex(32)` → 64-char hex, 256 bits of entropy
+- `DATABASE_PASSWORD` — `secrets.token_urlsafe(32)` → URL-safe (A-Z a-z 0-9 `-` `_`), safe in connection URLs without percent-encoding
+- Connects to PostgreSQL as admin user (`postgres` by default) using `psycopg3`
+- Uses parameterised queries for password to prevent injection
+- Idempotent: if user/DB already exists, updates password/owner instead of failing
+- Admin credentials are asked interactively (`getpass`) — **never stored**
+- Falls back gracefully: prints SQL commands if `psycopg` unavailable or connection fails
+
+### Usage
+```bash
+python setup_env.py                  # Interactive: generate + provision DB
+python setup_env.py --generate-only  # Just write .env (no DB creation)
+python setup_env.py --force          # Overwrite existing .env without prompt
+```
+
+---
+
 ## [PRE-ALPHA v0.4.1 | 2026-02-23 ~22:00] — requirements.txt Sync to Actual Installed Versions
 
 **What changed:** `requirements.txt` was outdated — it listed package versions from the initial project setup, two missing packages (`pandas`, `python-dateutil`), and one wrong package name (`psycopg-binary` vs `psycopg[binary,pool]`). The file now reflects exact versions from the active Python 3.13 environment.
