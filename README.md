@@ -78,10 +78,11 @@ WOMS-FYP-NEW/                       ← repository root
     │   │
     │   └── migrations/             ← deprecated SQL reference files (not executed)
     │
-    └── docs/
-        └── official_documentation/
-            ├── database_structure.md   ← full schema reference
-            └── version_update.md       ← changelog (PRE-ALPHA vX.Y.Z)
+└── docs/                               ← all documentation (project root)
+    ├── official_documentation/
+    │   ├── database_structure.md       ← full schema reference
+    │   └── version_update.md           ← changelog (PRE-ALPHA vX.Y.Z)
+    └── planning_phase/                 ← design notes (5 files)
 ```
 
 ---
@@ -220,8 +221,8 @@ All values are auto-populated by `setup_env.py`. See `.env.template` for the ful
 
 | File | Contents |
 |------|----------|
-| [`backend/docs/official_documentation/database_structure.md`](backend/docs/official_documentation/database_structure.md) | Full schema: all 49 tables, columns, indexes, triggers, views |
-| [`backend/docs/official_documentation/version_update.md`](backend/docs/official_documentation/version_update.md) | Changelog — every change logged with version + timestamp |
+| [`docs/official_documentation/database_structure.md`](docs/official_documentation/database_structure.md) | Full schema: all 49 tables, columns, indexes, triggers, views |
+| [`docs/official_documentation/version_update.md`](docs/official_documentation/version_update.md) | Changelog — every change logged with version + timestamp |
 
 ---
 

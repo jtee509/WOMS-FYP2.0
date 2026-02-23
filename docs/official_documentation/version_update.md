@@ -7,6 +7,21 @@ Version scheme: `PRE-ALPHA vX.Y.Z`
 
 ---
 
+## [PRE-ALPHA v0.4.4 | 2026-02-23 ~23:30] — Move docs/ to project root, commit planning_phase
+
+**What changed:** The `docs/` folder was moved from `backend/docs/` to the project root so it is visible to anyone browsing the repository without navigating into `backend/`. The `planning_phase/` subfolder was removed from `.gitignore` and all 5 design-notes files are now committed alongside the official documentation.
+
+### Changes Made
+
+| File | Change | Why |
+|---|---|---|
+| `backend/docs/` → `docs/` | Entire docs folder moved to project root | Better discoverability — docs are now visible at repo root without entering backend/ |
+| `.gitignore` | Removed `backend/docs/planning_phase/` and `docs/planning_phase/` exclusion lines | Planning docs should be versioned alongside official docs for full project history |
+| `docs/planning_phase/` (5 files) | Added to git and committed for the first time | Design notes are part of the project record and useful for contributors |
+| `README.md` | Updated 2 doc links from `backend/docs/...` → `docs/...`; updated project layout tree | Links were pointing to old path after folder move |
+
+---
+
 ## [PRE-ALPHA v0.4.3 | 2026-02-23 ~23:00] — README overhaul + remove planning_phase from git
 
 **What changed:** README.md was completely rewritten to reflect the current project state (backend/ layout, actual endpoints, setup_env.py workflow). The `planning_phase/` docs folder was removed from git tracking (files remain on disk but are gitignored).
