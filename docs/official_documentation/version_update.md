@@ -7,6 +7,70 @@ Version scheme: `PRE-ALPHA vX.Y.Z`
 
 ---
 
+## [PRE-ALPHA v0.4.5 | 2026-02-25 ~16:00] — API Development Proposal revised (10 review findings)
+
+**What changed:** The API Development Proposal (`docs/planning_phase/Backend/06_api_development_proposal_106ea193.plan.md`) was reviewed against the actual codebase and rewritten with 10 improvements.
+
+### Changes Made
+
+| # | Finding | Change |
+|---|---------|--------|
+| 1 | Nested `/catalog/`, `/marketplace/` paths | Replaced with flat paths matching `main.py:207-211` stubs |
+| 2 | Missing authentication | Added new Section 3 covering `app/auth/` package, JWT, login/register/refresh endpoints |
+| 3 | Separate `seller.py` for one model | Merged Seller into `platform.py` with other marketplace models |
+| 4 | Deeply nested `schemas/` directory | Flattened to mirror model files |
+| 5 | `PlatformRawImport` incorrectly marked as "legacy/deprecate" | Corrected: both tables serve distinct roles; `Order.raw_import_id` FK depends on it |
+| 6 | Migration naming lacked implementation detail | Added actual `alembic.ini` `file_template` change |
+| 7 | `warehouse.py` not discussed | Acknowledged as future split candidate (483 lines, 11 models) |
+| 8 | Circular import risk in model split | Added `TYPE_CHECKING` + string FK refs resolution pattern |
+| 9 | Existing `ImportResult`/`SyncResult` dataclasses not mentioned | Documented with conversion plan to Pydantic |
+| 10 | No error response standardization | Added `ErrorResponse`/`PaginatedResponse` in `common.py` |
+
+Phases reordered from 4 to 6: docs → schemas → **auth** → order CRUD → supporting CRUDs → model split.
+
+---
+
+## [PRE-ALPHA v0.5.0 | 2026-02-25 ~15:00] — Frontend Project Scaffold (React + Vite + TypeScript + MUI)
+
+**What changed:** Created the `frontend/` directory with a complete React + Vite + TypeScript project scaffold. Includes Material UI theming (Montserrat font, custom palette, button/checkbox/alert overrides), react-pro-sidebar navigation, HashRouter for Electron compatibility, Axios API client layer matching all backend endpoints, TypeScript interfaces for JSONB columns, D3 integration hook, and placeholder pages for all features. Also created three new documentation files for frontend development tracking.
+
+### Changes Made
+
+| File / Folder | Change | Why |
+|---|---|---|
+| `frontend/` (new) | Complete Vite + React + TS scaffold with 25+ source files | Monorepo frontend sibling to `backend/`; prepared since v0.4.0 |
+| `frontend/vite.config.ts` | Dev proxy `/api` → `localhost:8000`; base `./` | Proxy avoids CORS issues; relative base enables Electron file:// |
+| `frontend/index.html` | Montserrat font CDN link, updated title | User-specified font; descriptive page title |
+| `frontend/src/theme/theme.ts` | MUI theme: Montserrat, primary (#1565C0), secondary (#FF8F00), component overrides | Light-mode theme with scalable ThemeProvider for future dark mode |
+| `frontend/src/main.tsx` | StrictMode + ThemeProvider + CssBaseline + HashRouter | HashRouter for Electron compat; theme consistency |
+| `frontend/src/App.tsx` | 5 routes: /, /orders/import, /reference, /ml, 404 | Maps all backend features to frontend pages |
+| `frontend/src/layouts/MainLayout.tsx` | react-pro-sidebar, responsive AppBar, Outlet | Collapsible sidebar with Material Icons, mobile breakpoints |
+| `frontend/src/api/*.ts` | Axios client + 4 API modules matching backend contracts | Type-safe API calls with centralised error handling |
+| `frontend/src/types/*.ts` | TypeScript interfaces for orders, reference, mlSync, JSONB | Type safety for all backend interactions |
+| `frontend/src/services/dataService.ts` | Multi-DB toggle service (woms_db / ml_woms_db) | Forward-looking abstraction for DB context switching |
+| `frontend/src/hooks/useD3.ts` | D3 + useRef integration hook | Prevents D3/React virtual DOM conflicts |
+| `frontend/src/components/common/PageHeader.tsx` | Reusable page header | Consistent heading style across pages |
+| `frontend/src/pages/*.tsx` | 5 placeholder pages | Skeleton pages ready for feature implementation |
+| `docs/official_documentation/frontend-development-progress.md` (new) | Frontend progress tracking document | User ground rule #1: document all updates |
+| `docs/official_documentation/web-api.md` (new) | Full API documentation for all 9 endpoints | User ground rule #2: document all APIs |
+| `docs/official_documentation/frontend-error.md` (new) | Error tracking log template | User ground rule #6: document all errors |
+| `README.md` | Added Frontend section, updated project layout tree | Reflect new frontend directory |
+
+### Tech Stack
+
+| Layer | Choice | Version |
+|---|---|---|
+| Framework | React + TypeScript (Strict) | 19.x |
+| Build tool | Vite | 6.x |
+| UI Library | @mui/material + @emotion | 6.x |
+| Routing | react-router-dom (HashRouter) | 7.x |
+| Sidebar | react-pro-sidebar | 1.x |
+| HTTP client | axios | 1.x |
+| Charts | d3 (useRef pattern) | 7.x |
+| Mock data | @faker-js/faker | 9.x |
+
+---
+
 ## [PRE-ALPHA v0.4.4 | 2026-02-23 ~23:30] — Move docs/ to project root, commit planning_phase
 
 **What changed:** The `docs/` folder was moved from `backend/docs/` to the project root so it is visible to anyone browsing the repository without navigating into `backend/`. The `planning_phase/` subfolder was removed from `.gitignore` and all 5 design-notes files are now committed alongside the official documentation.
