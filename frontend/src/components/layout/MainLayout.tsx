@@ -1,18 +1,12 @@
 import { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Sidebar, Menu, MenuItem } from 'react-pro-sidebar';
-import Box from '@mui/material/Box';
-import AppBar from '@mui/material/AppBar';
-import Toolbar from '@mui/material/Toolbar';
-import Typography from '@mui/material/Typography';
-import IconButton from '@mui/material/IconButton';
-import useMediaQuery from '@mui/material/useMediaQuery';
-import { useTheme } from '@mui/material/styles';
 import MenuIcon from '@mui/icons-material/Menu';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import StorageIcon from '@mui/icons-material/Storage';
 import SyncIcon from '@mui/icons-material/Sync';
+import useIsMobile from '../hooks/useIsMobile';
 
 const NAV_ITEMS = [
   { label: 'Dashboard', path: '/', icon: <DashboardIcon /> },
@@ -25,8 +19,7 @@ const SIDEBAR_WIDTH = 260;
 const SIDEBAR_COLLAPSED_WIDTH = 80;
 
 export default function MainLayout() {
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const isMobile = useIsMobile();
   const [collapsed, setCollapsed] = useState(false);
   const [toggled, setToggled] = useState(false);
   const navigate = useNavigate();
@@ -48,62 +41,49 @@ export default function MainLayout() {
   const sidebarWidth = collapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH;
 
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+    <div className="flex min-h-screen">
       {/* Sidebar */}
       <Sidebar
         collapsed={collapsed}
         toggled={toggled}
         onBackdropClick={() => setToggled(false)}
         breakPoint="md"
-        backgroundColor={theme.palette.background.paper}
+        backgroundColor="var(--color-surface)"
         rootStyles={{
-          borderRight: `1px solid ${theme.palette.divider}`,
+          borderRight: '1px solid var(--color-divider)',
           height: '100vh',
-          position: 'fixed',
+          position: 'fixed' as const,
           top: 0,
           left: 0,
-          zIndex: theme.zIndex.drawer,
+          zIndex: 1200,
         }}
         width={`${SIDEBAR_WIDTH}px`}
         collapsedWidth={`${SIDEBAR_COLLAPSED_WIDTH}px`}
       >
         {/* Sidebar header */}
-        <Box
-          sx={{
-            p: 2,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: collapsed ? 'center' : 'flex-start',
-            borderBottom: `1px solid ${theme.palette.divider}`,
-            minHeight: 64,
-          }}
+        <div
+          className="p-4 flex items-center min-h-16 border-b border-divider"
+          style={{ justifyContent: collapsed ? 'center' : 'flex-start' }}
         >
-          <Typography
-            variant="h6"
-            sx={{
-              fontWeight: 700,
-              color: theme.palette.primary.main,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-            }}
-          >
+          <span className="text-xl font-bold text-primary whitespace-nowrap overflow-hidden">
             {collapsed ? 'W' : 'WOMS'}
-          </Typography>
-        </Box>
+          </span>
+        </div>
 
         {/* Navigation menu */}
         <Menu
           menuItemStyles={{
-            button: ({ active }) => ({
+            button: ({ active }: { active: boolean }) => ({
               backgroundColor: active
-                ? theme.palette.primary.main + '14'
+                ? 'color-mix(in srgb, var(--color-primary) 8%, transparent)'
                 : 'transparent',
               color: active
-                ? theme.palette.primary.main
-                : theme.palette.text.primary,
+                ? 'var(--color-primary)'
+                : 'var(--color-text-primary)',
               fontWeight: active ? 600 : 400,
               '&:hover': {
-                backgroundColor: theme.palette.primary.main + '0A',
+                backgroundColor:
+                  'color-mix(in srgb, var(--color-primary) 4%, transparent)',
               },
             }),
           }}
@@ -122,40 +102,31 @@ export default function MainLayout() {
       </Sidebar>
 
       {/* Main content area */}
-      <Box
-        component="main"
-        sx={{
-          flexGrow: 1,
-          ml: isMobile ? 0 : `${sidebarWidth}px`,
-          transition: 'margin-left 0.3s',
-          display: 'flex',
-          flexDirection: 'column',
-          minHeight: '100vh',
-        }}
+      <main
+        className="flex-grow flex flex-col min-h-screen transition-[margin-left] duration-300"
+        style={{ marginLeft: isMobile ? 0 : `${sidebarWidth}px` }}
       >
         {/* Top bar */}
-        <AppBar
-          position="sticky"
-          color="inherit"
-          sx={{
-            backgroundColor: theme.palette.background.paper,
-          }}
-        >
-          <Toolbar>
-            <IconButton edge="start" onClick={handleToggle} sx={{ mr: 2 }}>
+        <header className="sticky top-0 z-[1100] bg-surface shadow-appbar">
+          <div className="flex items-center min-h-16 px-4">
+            <button
+              onClick={handleToggle}
+              className="mr-4 p-2 rounded-full hover:bg-black/5 cursor-pointer"
+              aria-label="Toggle menu"
+            >
               <MenuIcon />
-            </IconButton>
-            <Typography variant="h6" noWrap sx={{ flexGrow: 1 }}>
+            </button>
+            <h6 className="text-lg font-semibold whitespace-nowrap overflow-hidden text-ellipsis flex-grow">
               Warehouse Order Management System
-            </Typography>
-          </Toolbar>
-        </AppBar>
+            </h6>
+          </div>
+        </header>
 
         {/* Page content */}
-        <Box sx={{ p: 3, flexGrow: 1 }}>
+        <div className="p-6 flex-grow">
           <Outlet />
-        </Box>
-      </Box>
-    </Box>
+        </div>
+      </main>
+    </div>
   );
 }

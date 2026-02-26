@@ -1,18 +1,16 @@
-import Box from '@mui/material/Box';
-import Alert from '@mui/material/Alert';
-import PageHeader from '../components/common/PageHeader';
+import PageHeader from '../components/layout/PageHeader';
 
 export default function ReferencePage() {
   return (
-    <Box>
+    <div>
       <PageHeader
         title="Reference Data"
         description="Manage platforms, sellers, and item master data"
       />
-      <Alert severity="info">
+      <div className="bg-info-bg text-info-text rounded-default px-4 py-3 text-sm">
         Reference data management will be implemented here. Upload platforms,
         sellers, and item master files to populate the database.
-      </Alert>
-    </Box>
+      </div>
+    </div>
   );
 }

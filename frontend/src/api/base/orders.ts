@@ -1,5 +1,5 @@
 import apiClient from './client';
-import type { ImportResult } from '../types/orders';
+import type { ImportResult } from '../base_types/orders';
 
 export async function importOrders(
   platform: string,

@@ -1,5 +1,5 @@
 import apiClient from './client';
-import type { LoadResult } from '../types/reference';
+import type { LoadResult } from '../base_types/reference';
 
 export async function loadPlatforms(file: File): Promise<LoadResult> {
   const formData = new FormData();

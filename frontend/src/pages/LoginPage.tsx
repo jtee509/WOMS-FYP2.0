@@ -1,18 +1,9 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import Box from '@mui/material/Box';
-import Card from '@mui/material/Card';
-import TextField from '@mui/material/TextField';
-import Button from '@mui/material/Button';
-import Typography from '@mui/material/Typography';
-import IconButton from '@mui/material/IconButton';
-import InputAdornment from '@mui/material/InputAdornment';
-import Alert from '@mui/material/Alert';
-import CircularProgress from '@mui/material/CircularProgress';
+import WarehouseIcon from '@mui/icons-material/Warehouse';
 import Visibility from '@mui/icons-material/Visibility';
 import VisibilityOff from '@mui/icons-material/VisibilityOff';
-import WarehouseIcon from '@mui/icons-material/Warehouse';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../api/contexts/AuthContext';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -62,272 +53,141 @@ export default function LoginPage() {
   };
 
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: '#1A1A2E',
-        p: 2,
-      }}
-    >
-      <Card
-        sx={{
-          display: 'flex',
-          maxWidth: 900,
-          width: '100%',
-          minHeight: 540,
-          borderRadius: 3,
-          overflow: 'hidden',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-        }}
-      >
+    <div className="min-h-screen flex items-center justify-center bg-login-bg p-2">
+      <div className="flex max-w-[900px] w-full min-h-[540px] rounded-card overflow-hidden shadow-login bg-surface">
         {/* ---- LEFT SIDE: Decorative panel ---- */}
-        <Box
-          sx={{
-            width: '45%',
-            display: { xs: 'none', md: 'flex' },
-            alignItems: 'center',
-            justifyContent: 'center',
-            position: 'relative',
-            overflow: 'hidden',
-            backgroundColor: '#16213E',
-          }}
-        >
-          {/* Large primary blob */}
-          <Box
-            sx={{
-              position: 'absolute',
-              width: 240,
-              height: 240,
-              borderRadius: '50%',
-              background:
-                'linear-gradient(135deg, #1565C0 0%, #1E88E5 100%)',
-              opacity: 0.7,
-              top: '10%',
-              left: '5%',
-              filter: 'blur(2px)',
-            }}
-          />
-          {/* Secondary orange blob */}
-          <Box
-            sx={{
-              position: 'absolute',
-              width: 180,
-              height: 180,
-              borderRadius: '50%',
-              background:
-                'linear-gradient(135deg, #FF8F00 0%, #FFA726 100%)',
-              opacity: 0.55,
-              bottom: '15%',
-              right: '0%',
-              filter: 'blur(2px)',
-            }}
-          />
-          {/* Dark accent blob */}
-          <Box
-            sx={{
-              position: 'absolute',
-              width: 140,
-              height: 140,
-              borderRadius: '50%',
-              background:
-                'linear-gradient(135deg, #0D47A1 0%, #1565C0 100%)',
-              opacity: 0.5,
-              top: '40%',
-              left: '30%',
-              filter: 'blur(1px)',
-            }}
-          />
-          {/* Small light accent */}
-          <Box
-            sx={{
-              position: 'absolute',
-              width: 80,
-              height: 80,
-              borderRadius: '50%',
-              background:
-                'linear-gradient(135deg, #FFA726 0%, #FF8F00 100%)',
-              opacity: 0.45,
-              top: '20%',
-              right: '20%',
-              filter: 'blur(1px)',
-            }}
-          />
-          {/* Tiny primary dot */}
-          <Box
-            sx={{
-              position: 'absolute',
-              width: 50,
-              height: 50,
-              borderRadius: '50%',
-              background:
-                'linear-gradient(135deg, #1E88E5 0%, #0D47A1 100%)',
-              opacity: 0.6,
-              bottom: '8%',
-              left: '15%',
-              filter: 'blur(1px)',
-            }}
-          />
-        </Box>
+        <div className="w-[45%] hidden md:flex items-center justify-center relative overflow-hidden bg-login-panel">
+          <div className="login-blob login-blob--primary" />
+          <div className="login-blob login-blob--secondary" />
+          <div className="login-blob login-blob--dark-accent" />
+          <div className="login-blob login-blob--light-accent" />
+          <div className="login-blob login-blob--tiny-dot" />
+        </div>
 
         {/* ---- RIGHT SIDE: Login form ---- */}
-        <Box
-          sx={{
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-            p: { xs: 3, sm: 5 },
-            backgroundColor: '#FFFFFF',
-          }}
-        >
+        <div className="flex-1 flex flex-col justify-center p-6 sm:p-10 bg-surface">
           {/* WOMS branding */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-            <WarehouseIcon
-              sx={{ fontSize: 36, color: '#1565C0' }}
-            />
-            <Typography
-              variant="h4"
-              sx={{ fontWeight: 700, color: '#1565C0' }}
-            >
-              WOMS
-            </Typography>
-          </Box>
-          <Typography
-            variant="body2"
-            sx={{ color: '#555770', mb: 4 }}
-          >
+          <div className="flex items-center gap-2 mb-1">
+            <WarehouseIcon className="!text-4xl !text-primary" />
+            <h1 className="text-3xl font-bold text-primary">WOMS</h1>
+          </div>
+          <p className="text-sm text-text-secondary mb-8">
             Warehouse Order Management System
-          </Typography>
+          </p>
 
           {/* Welcome heading */}
-          <Typography
-            variant="h5"
-            sx={{ fontWeight: 600, color: '#1A1A2E', mb: 3 }}
-          >
+          <h2 className="text-xl font-semibold text-text-primary mb-6">
             Welcome Back!
-          </Typography>
+          </h2>
 
           {/* Error alert */}
           {error && (
-            <Alert
-              severity="error"
-              sx={{ mb: 2 }}
-              onClose={() => setError(null)}
-            >
-              {error}
-            </Alert>
+            <div className="flex items-center gap-2 bg-error-bg text-error-text rounded-default px-4 py-3 mb-4 text-sm">
+              <span className="flex-1">{error}</span>
+              <button
+                type="button"
+                onClick={() => setError(null)}
+                className="text-error-text hover:opacity-70 font-bold text-lg leading-none cursor-pointer"
+              >
+                &times;
+              </button>
+            </div>
           )}
 
           {/* Login form */}
-          <Box component="form" onSubmit={handleSubmit} noValidate>
-            <TextField
-              fullWidth
-              label="Email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              error={emailError}
-              helperText={
-                emailError
+          <form onSubmit={handleSubmit} noValidate>
+            {/* Email field */}
+            <div className="mb-4">
+              <label htmlFor="login-email" className="form-label">
+                Email
+              </label>
+              <input
+                id="login-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className={`form-input ${emailError ? 'form-input--error' : ''}`}
+                autoComplete="email"
+                autoFocus
+              />
+              <p
+                className={`form-helper ${
+                  emailError
+                    ? 'text-error'
+                    : emailTouched && emailValid
+                      ? 'text-success'
+                      : 'text-transparent'
+                }`}
+              >
+                {emailError
                   ? 'Please enter a valid email address'
                   : emailTouched && emailValid
                     ? 'Perfect!'
-                    : ' '
-              }
-              slotProps={{
-                formHelperText: {
-                  sx: {
-                    color:
-                      emailTouched && emailValid ? 'success.main' : undefined,
-                  },
-                },
-              }}
-              margin="normal"
-              autoComplete="email"
-              autoFocus
-            />
+                    : '\u00A0'}
+              </p>
+            </div>
 
-            <TextField
-              fullWidth
-              label="Password"
-              type={showPassword ? 'text' : 'password'}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              helperText=" "
-              margin="normal"
-              autoComplete="current-password"
-              slotProps={{
-                input: {
-                  endAdornment: (
-                    <InputAdornment position="end">
-                      <IconButton
-                        onClick={() => setShowPassword(!showPassword)}
-                        edge="end"
-                        aria-label={
-                          showPassword ? 'Hide password' : 'Show password'
-                        }
-                      >
-                        {showPassword ? <VisibilityOff /> : <Visibility />}
-                      </IconButton>
-                    </InputAdornment>
-                  ),
-                },
-              }}
-            />
+            {/* Password field */}
+            <div className="mb-4">
+              <label htmlFor="login-password" className="form-label">
+                Password
+              </label>
+              <div className="relative">
+                <input
+                  id="login-password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="form-input pr-12"
+                  autoComplete="current-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary hover:text-text-primary cursor-pointer"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? (
+                    <VisibilityOff fontSize="small" />
+                  ) : (
+                    <Visibility fontSize="small" />
+                  )}
+                </button>
+              </div>
+              <p className="form-helper text-transparent">&nbsp;</p>
+            </div>
 
-            <Button
+            {/* Submit button */}
+            <button
               type="submit"
-              fullWidth
-              variant="contained"
-              color="primary"
               disabled={!canSubmit}
-              sx={{ mt: 2, mb: 2, py: 1.3, fontSize: '1rem' }}
+              className="w-full mt-2 mb-2 py-3 bg-primary hover:bg-primary-dark text-white font-semibold text-base rounded-default shadow-none hover:shadow-button-hover transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               {loading ? (
-                <CircularProgress size={24} color="inherit" />
+                <span className="inline-block w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               ) : (
                 'Sign In'
               )}
-            </Button>
-          </Box>
+            </button>
+          </form>
 
           {/* Secondary links */}
-          <Box
-            sx={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              mt: 1,
-            }}
-          >
-            <Button
-              variant="text"
-              size="small"
-              sx={{
-                color: '#555770',
-                textTransform: 'none',
-                fontWeight: 400,
-              }}
+          <div className="flex justify-between items-center mt-2">
+            <button
+              type="button"
+              className="text-sm text-text-secondary hover:underline cursor-pointer bg-transparent border-none"
             >
               Forgot My Password
-            </Button>
-            <Button
-              variant="text"
-              size="small"
-              sx={{
-                color: '#1565C0',
-                textTransform: 'none',
-                fontWeight: 500,
-              }}
+            </button>
+            <button
+              type="button"
+              className="text-sm text-primary font-medium hover:underline cursor-pointer bg-transparent border-none"
             >
               Request An Account
-            </Button>
-          </Box>
-        </Box>
-      </Card>
-    </Box>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

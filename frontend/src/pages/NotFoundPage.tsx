@@ -1,34 +1,24 @@
-import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
-import Button from '@mui/material/Button';
 import { useNavigate } from 'react-router-dom';
 
 export default function NotFoundPage() {
   const navigate = useNavigate();
 
   return (
-    <Box
-      sx={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '60vh',
-        textAlign: 'center',
-      }}
-    >
-      <Typography variant="h1" color="text.secondary" sx={{ fontSize: '6rem', mb: 2 }}>
-        404
-      </Typography>
-      <Typography variant="h5" gutterBottom>
+    <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
+      <h1 className="text-[6rem] font-bold text-text-secondary mb-2">404</h1>
+      <h2 className="text-xl font-semibold text-text-primary mb-2">
         Page Not Found
-      </Typography>
-      <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+      </h2>
+      <p className="text-base text-text-secondary mb-6">
         The page you are looking for does not exist.
-      </Typography>
-      <Button variant="contained" onClick={() => navigate('/')}>
+      </p>
+      <button
+        type="button"
+        onClick={() => navigate('/')}
+        className="px-5 py-2 bg-primary hover:bg-primary-dark text-white font-semibold rounded-default hover:shadow-button-hover transition-all cursor-pointer"
+      >
         Back to Dashboard
-      </Button>
-    </Box>
+      </button>
+    </div>
   );
 }
