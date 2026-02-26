@@ -1,0 +1,170 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   WOMS Project Theme — Tailwind CSS v4
+   Maps project design tokens from theme/theme.ts into Tailwind's @theme.
+   Usage: bg-primary, text-secondary, font-sans, rounded-card, etc.
+   ========================================================================== */
+
+@theme {
+  /* ---- Primary Palette ---- */
+  --color-primary: #1565C0;
+  --color-primary-light: #1E88E5;
+  --color-primary-dark: #0D47A1;
+
+  /* ---- Secondary Palette ---- */
+  --color-secondary: #FF8F00;
+  --color-secondary-light: #FFA726;
+  --color-secondary-dark: #E65100;
+
+  /* ---- Background & Surface ---- */
+  --color-background: #F5F7FA;
+  --color-surface: #FFFFFF;
+
+  /* ---- Text ---- */
+  --color-text-primary: #1A1A2E;
+  --color-text-secondary: #555770;
+
+  /* ---- Semantic Colors ---- */
+  --color-error: #D32F2F;
+  --color-warning: #ED6C02;
+  --color-success: #2E7D32;
+  --color-info: #0288D1;
+
+  /* ---- Semantic Background Tints ---- */
+  --color-error-bg: #FFEBEE;
+  --color-error-text: #B71C1C;
+  --color-warning-bg: #FFF3E0;
+  --color-warning-text: #E65100;
+  --color-success-bg: #E8F5E9;
+  --color-success-text: #1B5E20;
+  --color-info-bg: #E1F5FE;
+  --color-info-text: #01579B;
+
+  /* ---- Login Page ---- */
+  --color-login-bg: #1A1A2E;
+  --color-login-panel: #16213E;
+
+  /* ---- Divider / Border ---- */
+  --color-divider: #E0E0E0;
+
+  /* ---- Typography ---- */
+  --font-sans: "Montserrat", "Helvetica", "Arial", sans-serif;
+
+  /* ---- Border Radius ---- */
+  --radius-default: 8px;
+  --radius-card: 12px;
+
+  /* ---- Shadows (matching MUI overrides) ---- */
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-button-hover: 0 2px 8px rgba(0, 0, 0, 0.15);
+  --shadow-appbar: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-login: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+/* ==========================================================================
+   Login Page — Decorative Blobs
+   Gradient circles that float in the left decorative panel.
+   ========================================================================== */
+
+.login-blob {
+  position: absolute;
+  border-radius: 50%;
+}
+
+.login-blob--primary {
+  width: 240px;
+  height: 240px;
+  background: linear-gradient(135deg, #1565C0 0%, #1E88E5 100%);
+  opacity: 0.7;
+  filter: blur(2px);
+  top: 10%;
+  left: 5%;
+}
+
+.login-blob--secondary {
+  width: 180px;
+  height: 180px;
+  background: linear-gradient(135deg, #FF8F00 0%, #FFA726 100%);
+  opacity: 0.55;
+  filter: blur(2px);
+  bottom: 15%;
+  right: 0%;
+}
+
+.login-blob--dark-accent {
+  width: 140px;
+  height: 140px;
+  background: linear-gradient(135deg, #0D47A1 0%, #1565C0 100%);
+  opacity: 0.5;
+  filter: blur(1px);
+  top: 40%;
+  left: 30%;
+}
+
+.login-blob--light-accent {
+  width: 80px;
+  height: 80px;
+  background: linear-gradient(135deg, #FFA726 0%, #FF8F00 100%);
+  opacity: 0.45;
+  filter: blur(1px);
+  top: 20%;
+  right: 20%;
+}
+
+.login-blob--tiny-dot {
+  width: 50px;
+  height: 50px;
+  background: linear-gradient(135deg, #1E88E5 0%, #0D47A1 100%);
+  opacity: 0.6;
+  filter: blur(1px);
+  bottom: 8%;
+  left: 15%;
+}
+
+/* ==========================================================================
+   Form Input — Custom styled inputs matching project design
+   ========================================================================== */
+
+.form-input {
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-default);
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  color: var(--color-text-primary);
+  background: var(--color-surface);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.form-input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(21, 101, 192, 0.2);
+}
+
+.form-input--error {
+  border-color: var(--color-error);
+}
+
+.form-input--error:focus {
+  border-color: var(--color-error);
+  box-shadow: 0 0 0 2px rgba(211, 47, 47, 0.2);
+}
+
+.form-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  margin-bottom: 6px;
+  font-family: var(--font-sans);
+}
+
+.form-helper {
+  font-size: 0.75rem;
+  margin-top: 4px;
+  min-height: 1.25rem;
+  font-family: var(--font-sans);
+}

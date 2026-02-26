@@ -33,7 +33,7 @@ apiClient.interceptors.response.use(
       if (status === 401 && !config.url?.includes('/auth/login')) {
         localStorage.removeItem('access_token');
         localStorage.removeItem('auth_user');
-        window.location.hash = '#/login';
+        window.location.href = '/login';
       }
     } else if (error.request) {
       console.error('[API] No response received — is the backend running?');

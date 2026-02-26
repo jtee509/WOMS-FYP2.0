@@ -6,6 +6,137 @@ Format: `[PRE-ALPHA vX.Y.Z | YYYY-MM-DD HH:MM] — Brief title`
 
 ---
 
+## Frontend Ground Rules
+
+1. Document all updates in this file (`frontend-development-progress.md`)
+2. Document all APIs in `web-api.md`
+3. Version naming aligned with backend `PRE-ALPHA vX.Y.Z`
+4. Comprehensive API testing for all endpoints
+5. UI color templates unchanged unless explicitly approved
+6. All errors logged in `frontend-error.md` (mark as fixed when resolved)
+7. **Component Architecture**: Dedicated component section (`src/components/`) for reusable functions (e.g., printing utilities, shared UI widgets)
+8. **Styling Standards**: All CSS must be in separate files — no inline styles or in-component style blocks
+9. **Routing Configuration**: Use `BrowserRouter` for application routing
+10. **Tailwind CSS**: Use Tailwind CSS v4 as the base styling framework — all new styling must use Tailwind utility classes. MUI `sx` prop and `.styles.ts` files are deprecated and will be migrated to Tailwind
+
+---
+
+## [PRE-ALPHA v0.5.1.6 | 2026-02-26 ~23:30] — Convert layouts/ + components/ to Tailwind, remove MUI theme
+
+**What changed:** Migrated MainLayout, ProtectedRoute, and PageHeader from MUI to native HTML + Tailwind. Removed MUI `ThemeProvider` and `theme.ts` — all design tokens now in `index.css`. Created `useIsMobile` hook to replace MUI `useMediaQuery`. MUI icons retained. JS bundle dropped from 466 kB to 417 kB (-49 kB).
+
+### Components Converted
+
+| Component | MUI Components Removed |
+|-----------|----------------------|
+| `MainLayout.tsx` | Box, AppBar, Toolbar, Typography, IconButton, useMediaQuery, useTheme |
+| `ProtectedRoute.tsx` | Box, CircularProgress |
+| `PageHeader.tsx` | Box, Typography |
+
+### New Files
+
+| File | Purpose |
+|------|---------|
+| `src/hooks/useIsMobile.ts` | Replaces MUI `useMediaQuery` using native `window.matchMedia` |
+
+### Files Deleted
+
+- `MainLayout.styles.ts`, `ProtectedRoute.styles.ts`, `PageHeader.styles.ts`, `common.styles.ts`, `theme/theme.ts`
+
+### MUI Status
+
+- **Still used**: `@mui/icons-material` (8 icons across MainLayout + LoginPage)
+- **Removed from app code**: ThemeProvider, CssBaseline, all MUI components (Box, AppBar, Typography, etc.)
+- **Kept as peer deps**: `@mui/material`, `@emotion/react`, `@emotion/styled` (required by `@mui/icons-material`)
+
+---
+
+## [PRE-ALPHA v0.5.1.5 | 2026-02-26 ~23:00] — Convert pages/ to Tailwind CSS
+
+**What changed:** Migrated all 6 page components from MUI to native HTML + Tailwind utility classes. JS bundle dropped from 561 kB to 466 kB (-96 kB) by removing MUI component imports from pages.
+
+### Pages Converted
+
+| Page | MUI Components Removed |
+|------|----------------------|
+| `LoginPage.tsx` | Box, Card, TextField, Button, Typography, Alert, IconButton, InputAdornment, CircularProgress |
+| `NotFoundPage.tsx` | Box, Typography, Button |
+| `DashboardPage.tsx` | Box, Card, CardContent, Grid, Typography |
+| `OrderImportPage.tsx` | Box, Alert |
+| `ReferencePage.tsx` | Box, Alert |
+| `MLSyncPage.tsx` | Box, Alert |
+
+### Custom CSS Added to `index.css`
+
+| Class | Purpose |
+|-------|---------|
+| `.login-blob--*` (5 variants) | Decorative gradient circles for login panel |
+| `.form-input` / `.form-input--error` | Styled text inputs with focus/error states |
+| `.form-label` / `.form-helper` | Input labels and helper text |
+
+### Files Deleted
+
+- `LoginPage.styles.ts`, `NotFoundPage.styles.ts` — replaced by Tailwind classes
+
+---
+
+## [PRE-ALPHA v0.5.1.4 | 2026-02-26 ~22:00] — Add Tailwind CSS v4 as Base Styling Framework
+
+**What changed:** Installed Tailwind CSS v4 with Vite plugin, created base CSS template with project theme tokens, and established ground rule #10 for Tailwind as the new styling standard.
+
+### Setup
+
+| Step | Detail |
+|------|--------|
+| Install | `tailwindcss` + `@tailwindcss/vite` |
+| Vite plugin | Added `tailwindcss()` to `vite.config.ts` plugins |
+| Base CSS | `src/index.css` — `@import "tailwindcss"` + `@theme` with all project design tokens |
+| Entry point | `main.tsx` imports `index.css`; `CssBaseline` removed (Tailwind preflight replaces it) |
+
+### Available Tailwind Theme Classes
+
+| Class Pattern | Maps To |
+|---------------|---------|
+| `bg-primary`, `text-primary` | #1565C0 |
+| `bg-secondary`, `text-secondary` | #FF8F00 |
+| `bg-background` | #F5F7FA |
+| `bg-surface` | #FFFFFF |
+| `text-text-primary` | #1A1A2E |
+| `text-text-secondary` | #555770 |
+| `bg-error`, `bg-success`, `bg-warning`, `bg-info` | Semantic colors |
+| `font-sans` | Montserrat |
+| `rounded-default`, `rounded-card` | 8px, 12px |
+| `shadow-card`, `shadow-appbar` | Project shadows |
+
+---
+
+## [PRE-ALPHA v0.5.1.3 | 2026-02-26 ~21:00] — Extract Inline Styles to Separate Files
+
+**What changed:** Extracted all inline MUI `sx` styles from 5 React components into co-located `*.styles.ts` files using typed `SxProps<Theme>` exports. Enforces ground rule #8.
+
+### New Style Files
+
+| File | Exports |
+|------|---------|
+| `src/styles/common.styles.ts` | `centeredFullPage`, `centeredContentArea` — shared layout primitives |
+| `src/pages/LoginPage.styles.ts` | 18 exports — blob helper, form panels, branding, buttons |
+| `src/layouts/MainLayout.styles.ts` | 10 exports — sidebar, AppBar, page content, react-pro-sidebar props |
+| `src/pages/NotFoundPage.styles.ts` | 3 exports — page root (re-export), error code, error message |
+| `src/components/auth/ProtectedRoute.styles.ts` | 1 export — loading container (re-export) |
+| `src/components/common/PageHeader.styles.ts` | 1 export — header container |
+
+### Refactored Components
+
+| Component | Inline `sx` removed | Pattern |
+|-----------|---------------------|---------|
+| `LoginPage.tsx` | 16+ | `import * as styles from './LoginPage.styles'` |
+| `MainLayout.tsx` | 9+ | `import * as styles from './MainLayout.styles'` |
+| `NotFoundPage.tsx` | 3 | `import * as styles from './NotFoundPage.styles'` |
+| `ProtectedRoute.tsx` | 1 | `import * as styles from './ProtectedRoute.styles'` |
+| `PageHeader.tsx` | 1 | `import * as styles from './PageHeader.styles'` |
+
+---
+
 ## [PRE-ALPHA v0.5.1 | 2026-02-26 ~12:00] — Login Page + Authentication Flow
 
 **What changed:** Added a full login page with dark-themed UI, authentication context with JWT token management, protected routes, and integration with the new backend `POST /api/v1/auth/login` endpoint.

@@ -1,4 +1,4 @@
-import apiClient from '../api/client';
+import apiClient from '../base/client';
 
 export type DatabaseTarget = 'woms_db' | 'ml_woms_db';
 

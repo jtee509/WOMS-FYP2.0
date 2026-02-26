@@ -1,59 +1,32 @@
-import Box from '@mui/material/Box';
-import Card from '@mui/material/Card';
-import CardContent from '@mui/material/CardContent';
-import Grid from '@mui/material/Grid';
-import Typography from '@mui/material/Typography';
-import PageHeader from '../components/common/PageHeader';
+import PageHeader from '../components/layout/PageHeader';
 
 export default function DashboardPage() {
+  const cards = [
+    { label: 'Total Orders', value: '--' },
+    { label: 'Platforms', value: '--' },
+    { label: 'Active Sellers', value: '--' },
+    { label: 'Items in Catalogue', value: '--' },
+  ];
+
   return (
-    <Box>
+    <div>
       <PageHeader
         title="Dashboard"
         description="Warehouse Order Management System overview"
       />
-      <Grid container spacing={3}>
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Card>
-            <CardContent>
-              <Typography color="text.secondary" gutterBottom>
-                Total Orders
-              </Typography>
-              <Typography variant="h4">--</Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Card>
-            <CardContent>
-              <Typography color="text.secondary" gutterBottom>
-                Platforms
-              </Typography>
-              <Typography variant="h4">--</Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Card>
-            <CardContent>
-              <Typography color="text.secondary" gutterBottom>
-                Active Sellers
-              </Typography>
-              <Typography variant="h4">--</Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Card>
-            <CardContent>
-              <Typography color="text.secondary" gutterBottom>
-                Items in Catalogue
-              </Typography>
-              <Typography variant="h4">--</Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-    </Box>
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
+        {cards.map((card) => (
+          <div
+            key={card.label}
+            className="bg-surface rounded-card shadow-card p-5"
+          >
+            <p className="text-sm text-text-secondary mb-1">{card.label}</p>
+            <p className="text-3xl font-semibold text-text-primary">
+              {card.value}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

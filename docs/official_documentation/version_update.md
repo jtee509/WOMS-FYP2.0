@@ -7,6 +7,228 @@ Version scheme: `PRE-ALPHA vX.Y.Z`
 
 ---
 
+## [PRE-ALPHA v0.5.1.6 | 2026-02-26 ~23:30] — Convert layouts/ + components/ to Tailwind CSS, remove MUI theme
+
+**What changed:** Migrated MainLayout, ProtectedRoute, and PageHeader from MUI components to native HTML + Tailwind CSS. Created custom `useIsMobile` hook to replace MUI `useMediaQuery`. Removed MUI `ThemeProvider` and `theme.ts` — all design tokens now live in `index.css` `@theme`. Uninstalled `lucide-react`. MUI icons are retained as the only MUI dependency in use.
+
+### New Files
+
+| File | Purpose |
+|------|---------|
+| `src/hooks/useIsMobile.ts` | Custom hook using `window.matchMedia` — replaces MUI `useMediaQuery(theme.breakpoints.down('md'))` |
+
+### Files Modified
+
+| File | Change | Why |
+|------|--------|-----|
+| `src/layouts/MainLayout.tsx` | Replaced MUI Box, AppBar, Toolbar, Typography, IconButton, useMediaQuery, useTheme with native HTML + Tailwind. react-pro-sidebar styles inlined as plain objects using CSS variables. MUI icons (Menu, Dashboard, UploadFile, Storage, Sync) retained. | Tailwind migration — ground rule #10 |
+| `src/components/auth/ProtectedRoute.tsx` | Replaced MUI Box + CircularProgress with div + CSS spinner (`animate-spin`) | Tailwind migration |
+| `src/components/common/PageHeader.tsx` | Replaced MUI Box + Typography with div/h1/p + Tailwind | Tailwind migration |
+| `src/main.tsx` | Removed `ThemeProvider` wrapper and `theme` import. Only `BrowserRouter` + `AuthProvider` + `App` remain. | No MUI components depend on theme anymore |
+
+### Files Deleted
+
+| File | Why |
+|------|-----|
+| `src/layouts/MainLayout.styles.ts` | Replaced by Tailwind classes + inlined react-pro-sidebar styles |
+| `src/components/auth/ProtectedRoute.styles.ts` | Replaced by Tailwind classes |
+| `src/components/common/PageHeader.styles.ts` | Replaced by Tailwind classes |
+| `src/styles/common.styles.ts` | Shared MUI styles no longer needed (Tailwind utilities used instead) |
+| `src/theme/theme.ts` | All design tokens migrated to `index.css` `@theme` block |
+
+### Packages Changed
+
+| Package | Action | Why |
+|---------|--------|-----|
+| `lucide-react` | Uninstalled | User chose to keep MUI icons instead |
+
+### Remaining MUI Dependencies
+
+`@mui/icons-material`, `@mui/material`, `@emotion/react`, `@emotion/styled` are still installed — `@mui/icons-material` is used in MainLayout.tsx (5 icons) and LoginPage.tsx (3 icons). `@mui/material` + Emotion are peer dependencies of `@mui/icons-material`.
+
+### Build Impact
+
+| Metric | Before (v0.5.1.5) | After | Change |
+|--------|--------|-------|--------|
+| JS bundle | 466.01 kB | 417.26 kB | **-48.75 kB** (removed MUI layout components + ThemeProvider) |
+| CSS output | 14.71 kB | 15.61 kB | +0.90 kB (Tailwind utilities for layouts) |
+| Modules | 397 | 379 | -18 modules |
+
+### Verification
+
+- `npx tsc --noEmit` — zero TypeScript errors
+- `npm run build` — successful (417.26 kB JS, 15.61 kB CSS)
+- `npm run dev` — server starts cleanly, no console errors
+
+---
+
+## [PRE-ALPHA v0.5.1.5 | 2026-02-26 ~23:00] — Convert pages/ to Tailwind CSS
+
+**What changed:** Migrated all 6 page components from MUI `sx` / MUI components to native HTML + Tailwind CSS utility classes. Removed MUI component imports (Box, Card, Typography, Button, Alert, Grid) from all pages. Deleted deprecated `.styles.ts` files. Extended `index.css` with login-specific CSS (blob decorations, form input styles).
+
+### Files Modified
+
+| File | Change | Why |
+|------|--------|-----|
+| `src/pages/LoginPage.tsx` | Replaced all MUI components (Box, Card, TextField, Button, Typography, Alert, IconButton, InputAdornment, CircularProgress) with native HTML + Tailwind classes. Only MUI icons retained. | Tailwind migration — ground rule #10 |
+| `src/pages/NotFoundPage.tsx` | Replaced Box, Typography, Button with div/h1/p/button + Tailwind | Tailwind migration |
+| `src/pages/DashboardPage.tsx` | Replaced Box, Card, CardContent, Grid, Typography with div/p + Tailwind grid | Tailwind migration |
+| `src/pages/OrderImportPage.tsx` | Replaced Box, Alert with div + Tailwind info alert styling | Tailwind migration |
+| `src/pages/ReferencePage.tsx` | Replaced Box, Alert with div + Tailwind info alert styling | Tailwind migration |
+| `src/pages/MLSyncPage.tsx` | Replaced Box, Alert with div + Tailwind info alert styling | Tailwind migration |
+| `src/index.css` | Added login page tokens (`--color-login-bg`, `--color-login-panel`, `--shadow-login`), blob CSS classes (`.login-blob--*`), form input CSS (`.form-input`, `.form-label`, `.form-helper`) | Custom CSS for complex login UI that doesn't fit pure utility classes |
+
+### Files Deleted
+
+| File | Why |
+|------|-----|
+| `src/pages/LoginPage.styles.ts` | Replaced by Tailwind classes + index.css custom CSS |
+| `src/pages/NotFoundPage.styles.ts` | Replaced by Tailwind classes |
+
+### Build Impact
+
+| Metric | Before | After | Change |
+|--------|--------|-------|--------|
+| JS bundle | 561.80 kB | 466.01 kB | **-95.79 kB** (removed MUI component imports) |
+| CSS output | 6.51 kB | 14.71 kB | +8.20 kB (Tailwind utilities + custom CSS) |
+| Chunk warning | Yes (>500 kB) | **No** | Under threshold |
+
+### Verification
+
+- `npx tsc --noEmit` — zero TypeScript errors
+- `npm run build` — successful, no chunk size warnings
+
+---
+
+## [PRE-ALPHA v0.5.1.4 | 2026-02-26 ~22:00] — Add Tailwind CSS v4 as base styling framework
+
+**What changed:** Installed Tailwind CSS v4 with the Vite plugin, created a base CSS template (`src/index.css`) with project design tokens mapped to Tailwind's `@theme`, and added ground rule #10 establishing Tailwind as the styling standard going forward.
+
+### New Files
+
+| File | Purpose |
+|------|---------|
+| `frontend/src/index.css` | Tailwind v4 base template — imports Tailwind, defines `@theme` with all project colors (primary, secondary, semantic), typography (Montserrat), border radii, and shadows matching `theme.ts` |
+
+### Files Modified
+
+| File | Change | Why |
+|------|--------|-----|
+| `frontend/vite.config.ts` | Added `@tailwindcss/vite` plugin | Tailwind v4 uses a Vite plugin (no PostCSS config needed) |
+| `frontend/src/main.tsx` | Added `import './index.css'`; removed `CssBaseline` import | Tailwind's preflight replaces MUI's CssBaseline for CSS resets |
+| `frontend/package.json` | Added `tailwindcss`, `@tailwindcss/vite` | Tailwind CSS v4 dependencies |
+
+### New Ground Rule
+
+| # | Rule |
+|---|------|
+| 10 | **Tailwind CSS**: Use Tailwind CSS v4 as base styling framework — all new styling uses Tailwind utility classes; MUI `sx`/`.styles.ts` are deprecated (migration pending) |
+
+### Design Decisions
+
+- **Tailwind CSS v4** (not v3) — CSS-first config via `@theme`, no `tailwind.config.js` needed, native Vite plugin
+- **Removed CssBaseline** — Tailwind's preflight handles browser CSS reset
+- **Kept ThemeProvider + theme.ts** temporarily — existing MUI components still depend on them; will be removed when components are fully migrated to Tailwind
+- **`@theme` tokens match `theme.ts`** — `bg-primary` = `#1565C0`, `text-secondary` = `#555770`, `font-sans` = Montserrat, etc.
+
+### Verification
+
+- `npx tsc --noEmit` — zero TypeScript errors
+- `npm run build` — successful (6.51 kB CSS output, 561.80 kB JS — slightly smaller than before CssBaseline removal)
+
+---
+
+## [PRE-ALPHA v0.5.1.3 | 2026-02-26 ~21:00] — Extract inline styles to separate files
+
+**What changed:** Extracted all inline MUI `sx` styles from React components into co-located `*.styles.ts` files using typed `SxProps<Theme>` exports. This enforces frontend ground rule #8 (all CSS in separate files).
+
+### New Files Created
+
+| File | Exports | Why |
+|------|---------|-----|
+| `src/styles/common.styles.ts` | `centeredFullPage`, `centeredContentArea` | Shared layout primitives reused by multiple components |
+| `src/pages/LoginPage.styles.ts` | 18 exports (static + factory functions + `blob()` helper) | Largest extraction — decorative blobs, form panels, branding, buttons |
+| `src/layouts/MainLayout.styles.ts` | 5 static + 5 factory/function exports | Sidebar, AppBar, page content; includes non-sx react-pro-sidebar props |
+| `src/pages/NotFoundPage.styles.ts` | `pageRoot` (re-export), `errorCode`, `errorMessage` | 404 page layout and typography |
+| `src/components/auth/ProtectedRoute.styles.ts` | `loadingContainer` (re-export) | Loading spinner container |
+| `src/components/common/PageHeader.styles.ts` | `headerContainer` | Page header margin |
+
+### Files Modified
+
+| File | Change | Why |
+|------|--------|-----|
+| `src/pages/LoginPage.tsx` | All 16+ inline `sx` → `import * as styles` | Ground rule #8 compliance |
+| `src/layouts/MainLayout.tsx` | All 9+ inline `sx` + react-pro-sidebar props → styles imports | Ground rule #8 compliance |
+| `src/pages/NotFoundPage.tsx` | 3 inline `sx` → styles imports | Ground rule #8 compliance |
+| `src/components/auth/ProtectedRoute.tsx` | 1 inline `sx` → styles import | Ground rule #8 compliance |
+| `src/components/common/PageHeader.tsx` | 1 inline `sx` → styles import | Ground rule #8 compliance |
+
+### Design Decisions
+
+- **SxProps<Theme> style files** (not CSS Modules) — project uses MUI responsive breakpoints, spacing multipliers, and palette references extensively; CSS Modules would require rewriting all of this as raw CSS
+- **Factory functions** for dynamic styles (e.g., `mainContent(isMobile, sidebarWidth)`, `emailHelperText(isValid)`) — runtime values require function calls
+- **`import type`** for Theme/SxProps — `verbatimModuleSyntax: true` in tsconfig requires it
+- **Re-exports from common** — `centeredFullPage` and `centeredContentArea` are shared patterns, imported by ProtectedRoute and NotFoundPage respectively
+
+### Verification
+
+- `npx tsc --noEmit` — zero TypeScript errors
+- `npm run build` — successful production build (563 kB bundle, unchanged from before extraction)
+
+---
+
+## [PRE-ALPHA v0.5.1.2 | 2026-02-26 ~20:00] — Frontend ground rules + BrowserRouter
+
+**What changed:** Added 3 new frontend ground rules (component architecture, separate CSS files, BrowserRouter) and switched routing from HashRouter to BrowserRouter.
+
+### New Ground Rules Added
+
+| # | Rule | Why |
+|---|------|-----|
+| 7 | Dedicated component section (`src/components/`) for reusable functions (e.g., printing) | Establishes convention for shared UI components |
+| 8 | All CSS in separate files — no inline or in-component styles | Consistent styling approach, easier maintenance |
+| 9 | Use BrowserRouter for routing | Standard SPA routing with clean URLs (no `#/` prefix) |
+
+### Files Modified
+
+| File | Change | Why |
+|------|--------|-----|
+| `frontend/src/main.tsx` | `HashRouter` → `BrowserRouter` | Ground rule #9: clean URL paths |
+| `frontend/src/api/client.ts` | 401 redirect: `window.location.hash = '#/login'` → `window.location.href = '/login'` | BrowserRouter uses pathname, not hash |
+| `docs/official_documentation/frontend-development-progress.md` | Added "Frontend Ground Rules" section with all 9 rules | Canonical location for frontend conventions |
+
+---
+
+## [PRE-ALPHA v0.5.1.1 | 2026-02-26 ~19:30] — Auth endpoint bugfixes + DB provisioning
+
+**What changed:** Fixed two bugs that prevented the login endpoint from working during end-to-end testing. Also provisioned `woms_user` in PostgreSQL and granted table-level permissions.
+
+### Bugs Fixed
+
+| # | Error | Root Cause | Fix |
+|---|-------|-----------|-----|
+| 1 | `permission denied for table users` | `woms_user` was created as DB owner but had no table-level `GRANT` on tables created by `postgres` | Ran `GRANT ALL ON ALL TABLES/SEQUENCES IN SCHEMA public TO woms_user` + `ALTER DEFAULT PRIVILEGES` |
+| 2 | `can't subtract offset-naive and offset-aware datetimes` | `last_login` column is `TIMESTAMP WITHOUT TIME ZONE`; `datetime.now(timezone.utc)` returns tz-aware datetime; asyncpg rejects the mismatch | Added `.replace(tzinfo=None)` in `routers/auth.py` line 49 |
+
+### Files Modified
+
+| File | Change | Why |
+|------|--------|-----|
+| `backend/app/routers/auth.py` | `datetime.now(timezone.utc).replace(tzinfo=None)` | Strip timezone for `TIMESTAMP WITHOUT TIME ZONE` column |
+| `fix_db_password.py` (new, temp) | Helper script to sync `.env` password with PostgreSQL | One-time DB provisioning tool |
+
+### Test Results
+
+| Test | Result |
+|------|--------|
+| `GET /health` | `{"status":"healthy","database":"connected"}` |
+| `POST /api/v1/auth/login` (admin@admin.com / Admin123) | 200 — JWT token + user info returned |
+| `GET /api/v1/auth/me` (Bearer token) | 200 — user profile returned |
+| Vite proxy `/api` -> backend | Working (login via port 5173 succeeds) |
+| Frontend dev server (localhost:5173) | Running, serves login page |
+
+---
+
 ## [PRE-ALPHA v0.5.2 | 2026-02-26 ~18:00] — Full CRUD API for all domains
 
 **What changed:** Built the complete REST API layer covering all 6 domains with 50+ endpoints. Includes Pydantic schemas (Create/Read/Update per entity), paginated list endpoints with search/filter, JWT-protected write operations, and a standard response envelope (`PaginatedResponse`, `ErrorResponse`). Also simplified Alembic migration naming by dropping the revision hash and seconds from filenames.
