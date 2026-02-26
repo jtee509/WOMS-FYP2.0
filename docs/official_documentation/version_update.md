@@ -7,6 +7,102 @@ Version scheme: `PRE-ALPHA vX.Y.Z`
 
 ---
 
+## [PRE-ALPHA v0.5.2 | 2026-02-26 ~18:00] — Full CRUD API for all domains
+
+**What changed:** Built the complete REST API layer covering all 6 domains with 50+ endpoints. Includes Pydantic schemas (Create/Read/Update per entity), paginated list endpoints with search/filter, JWT-protected write operations, and a standard response envelope (`PaginatedResponse`, `ErrorResponse`). Also simplified Alembic migration naming by dropping the revision hash and seconds from filenames.
+
+### New Files Created
+
+| File | Purpose |
+|------|---------|
+| `backend/app/schemas/common.py` | `PaginatedResponse[T]`, `ErrorResponse`, `MessageResponse` |
+| `backend/app/schemas/items.py` | ItemCreate, ItemRead, ItemUpdate + lookup reads |
+| `backend/app/schemas/orders.py` | OrderCreate, OrderRead, OrderUpdate, OrderDetailCreate/Read/Update, OrderListItem |
+| `backend/app/schemas/platform.py` | PlatformCreate/Read/Update, SellerCreate/Read/Update |
+| `backend/app/schemas/warehouse.py` | WarehouseCreate/Read/Update, InventoryLevelRead, InventoryAlertRead |
+| `backend/app/schemas/delivery.py` | DeliveryTripCreate/Read/Update, DriverCreate/Read/Update |
+| `backend/app/schemas/users.py` | UserCreate/Read/Update, RoleRead |
+| `backend/app/routers/items.py` | Items CRUD + lookup endpoints (statuses, types, categories, brands, UOMs) |
+| `backend/app/routers/orders.py` | Order CRUD + order detail updates |
+| `backend/app/routers/platforms.py` | Platform + Seller CRUD |
+| `backend/app/routers/warehouse.py` | Warehouse CRUD, locations, inventory levels, alerts |
+| `backend/app/routers/delivery.py` | Delivery trips + drivers CRUD |
+| `backend/app/routers/users.py` | User CRUD + roles listing |
+
+### Files Modified
+
+| File | Change | Why |
+|------|--------|-----|
+| `backend/app/main.py` | Mounted 6 new routers, removed future-routers comment block | Activate all CRUD endpoints |
+| `backend/app/schemas/__init__.py` | Re-export all new schema classes | Centralized schema imports |
+| `backend/alembic.ini` | Simplified `file_template` (dropped `%%(second)` and `%%(rev)s`) | Cleaner migration filenames |
+
+### Endpoint Summary (50+ routes)
+
+| Domain | Endpoints | Auth Required |
+|--------|-----------|---------------|
+| Auth | POST /login, GET /me | Login: no, Me: yes |
+| Orders | GET list, GET/:id, POST, PATCH/:id, PATCH/:id/details/:id | Write: yes |
+| Order Import | POST /import | No |
+| Items | GET list, GET/:id, POST, PATCH/:id, DELETE/:id + 5 lookup GETs | Write: yes |
+| Platforms | GET list, GET/:id, POST, PATCH/:id | Write: yes |
+| Sellers | GET list, GET/:id, POST, PATCH/:id | Write: yes |
+| Warehouse | GET list, GET/:id, POST, PATCH/:id, locations, inventory, alerts | Write: yes |
+| Delivery | Drivers: GET/POST/PATCH, Trips: GET/POST/PATCH | Write: yes |
+| Users | GET list, GET/:id, POST, PATCH/:id, GET /roles | All: yes |
+| Reference | POST load-platforms/sellers/items | No |
+| ML Staging | POST sync, POST init-schema | No |
+
+---
+
+## [PRE-ALPHA v0.5.1 | 2026-02-26 ~12:00] — Login Page + JWT Authentication
+
+**What changed:** Added full authentication flow: backend JWT login endpoint with bcrypt password hashing, frontend login page with dark-themed UI matching project design system, auth context with token persistence, and protected routes. Seeded a test admin user (`admin@admin.com` / `Admin123`).
+
+### Backend Changes
+
+| File | Change | Why |
+|---|---|---|
+| `backend/app/schemas/auth.py` (new) | `LoginRequest`, `TokenResponse`, `TokenPayload` Pydantic schemas | Type-safe request/response validation for auth endpoints |
+| `backend/app/services/auth.py` (new) | `hash_password()`, `verify_password()`, `create_access_token()`, `decode_access_token()`, `authenticate_user()`, `get_current_user()` | Auth business logic using passlib[bcrypt] + python-jose; separated from router |
+| `backend/app/dependencies/__init__.py` (new) | Package init for FastAPI dependencies | Organise dependency injection functions |
+| `backend/app/dependencies/auth.py` (new) | `OAuth2PasswordBearer` scheme + `require_current_user()` dependency | JWT extraction from Bearer header; reusable for all protected endpoints |
+| `backend/app/routers/auth.py` (new) | `POST /api/v1/auth/login`, `GET /api/v1/auth/me` | Login endpoint returns JWT; /me validates token and returns user profile |
+| `backend/app/main.py` | Registered auth router at `/api/v1/auth` | Expose auth endpoints via FastAPI |
+| `backend/app/models/seed.py` | Added test admin user insert (`ON CONFLICT DO NOTHING`) | Test user for development; uses subquery for role_id resolution |
+| `backend/app/schemas/__init__.py` | Added auth schema imports | Package-level export |
+
+### Frontend Changes
+
+| File | Change | Why |
+|---|---|---|
+| `frontend/src/types/auth.ts` (new) | `LoginRequest`, `LoginResponse`, `AuthUser` interfaces | TypeScript types matching backend auth contract |
+| `frontend/src/api/auth.ts` (new) | `login()`, `getMe()` API functions | Frontend-to-backend auth API calls |
+| `frontend/src/contexts/AuthContext.tsx` (new) | `AuthProvider` + `useAuth()` hook | Global auth state: token in localStorage, /me validation on mount, login/logout |
+| `frontend/src/components/auth/ProtectedRoute.tsx` (new) | Route guard component | Redirects to /login if unauthenticated; shows spinner while validating |
+| `frontend/src/pages/LoginPage.tsx` (new) | Full login page UI | Dark background, decorative blobs panel, email/password form, error handling |
+| `frontend/src/api/client.ts` | Activated Bearer token injection; added 401 redirect handler | Token auto-injected on every request; expired tokens trigger login redirect |
+| `frontend/src/main.tsx` | Wrapped App in `<AuthProvider>` | Auth context available to all components |
+| `frontend/src/App.tsx` | `/login` route outside MainLayout; all others wrapped in `<ProtectedRoute>` | Login page has no sidebar; dashboard requires authentication |
+
+### New Endpoints
+
+| Method | URL | Auth | Description |
+|---|---|---|---|
+| POST | `/api/v1/auth/login` | Public | Authenticate with email + password, receive JWT |
+| GET | `/api/v1/auth/me` | Bearer JWT | Get current user profile (token validation) |
+
+### Test User
+
+| Field | Value |
+|---|---|
+| Email | `admin@admin.com` |
+| Password | `Admin123` |
+| Username | `admin` |
+| Role | Admin |
+
+---
+
 ## [PRE-ALPHA v0.4.5 | 2026-02-25 ~16:00] — API Development Proposal revised (10 review findings)
 
 **What changed:** The API Development Proposal (`docs/planning_phase/Backend/06_api_development_proposal_106ea193.plan.md`) was reviewed against the actual codebase and rewritten with 10 improvements.

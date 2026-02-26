@@ -272,5 +272,28 @@ async def seed_database(session: AsyncSession) -> None:
         [{"code": c, "name": n, "ret": r} for c, n, r in _EXCHANGE_REASONS],
     )
 
+    # -------------------------------------------------------------------------
+    # Test admin user: admin@admin.com / Admin123
+    # Requires the "Admin" role to already exist (seeded above).
+    # Password is hashed using bcrypt via passlib.
+    # ON CONFLICT (email) DO NOTHING — fully idempotent.
+    # -------------------------------------------------------------------------
+    from app.services.auth import hash_password
+
+    admin_hash = hash_password("Admin123")
+    await session.execute(
+        text(
+            "INSERT INTO users "
+            "(username, email, password_hash, first_name, last_name, "
+            "role_id, is_active, is_superuser, created_at, updated_at) "
+            "VALUES ("
+            "  'admin', :email, :pw_hash, 'Admin', 'User', "
+            "  (SELECT role_id FROM roles WHERE role_name = 'Admin'), "
+            "  TRUE, FALSE, NOW(), NOW()"
+            ") ON CONFLICT (email) DO NOTHING"
+        ),
+        {"email": "admin@admin.com", "pw_hash": admin_hash},
+    )
+
     await session.commit()
     print("[OK] Seed data inserted (all ON CONFLICT DO NOTHING - idempotent)")
