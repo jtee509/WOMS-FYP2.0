@@ -2,7 +2,7 @@
 
 A full-stack warehouse operations platform: multi-platform order ingestion (Shopee, Lazada, TikTok), inventory management, delivery tracking, and an ML staging pipeline.
 
-**Status:** PRE-ALPHA v0.5.1 · Python 3.13 · Node 22+ · PostgreSQL 13+
+**Status:** PRE-ALPHA v0.5.1.6 · Python 3.13 · Node 22+ · PostgreSQL 13+
 
 ---
 
@@ -16,7 +16,7 @@ A full-stack warehouse operations platform: multi-platform order ingestion (Shop
 | **Inventory** | Stock levels, locations, movements, batch/lot tracking |
 | **Delivery** | Drivers, vehicles, trips, real-time tracking |
 | **Users** | Role-based access, audit logging |
-| **Frontend** | React + MUI dashboard with sidebar navigation, API integration |
+| **Frontend** | React + Tailwind CSS dashboard with sidebar navigation, JWT auth, API integration |
 
 ---
 
@@ -40,8 +40,9 @@ A full-stack warehouse operations platform: multi-platform order ingestion (Shop
 |-------|-----------|
 | Framework | React 19 + TypeScript (Strict) |
 | Build tool | Vite 6 |
-| UI Library | Material UI (MUI) 6 |
-| Routing | react-router-dom 7 (HashRouter) |
+| Styling | Tailwind CSS v4 (CSS-first `@theme` config) |
+| Icons | MUI Icons (`@mui/icons-material`) |
+| Routing | react-router-dom 7 (BrowserRouter) |
 | Sidebar | react-pro-sidebar |
 | HTTP client | axios |
 | Charts | D3.js (useRef pattern) |
@@ -96,20 +97,23 @@ WOMS-FYP-NEW/                       ← repository root
 │
 ├── frontend/                       ← React + Vite + TypeScript app
 │   ├── index.html                  ← Montserrat font, app title
-│   ├── vite.config.ts              ← dev proxy to backend, Electron-compatible base
+│   ├── vite.config.ts              ← dev proxy + Tailwind CSS plugin
 │   ├── package.json
 │   │
 │   └── src/
-│       ├── main.tsx                ← ThemeProvider + HashRouter entry
+│       ├── main.tsx                ← BrowserRouter entry
 │       ├── App.tsx                 ← Route definitions
-│       ├── theme/theme.ts          ← MUI theme (Montserrat, custom palette)
-│       ├── layouts/MainLayout.tsx  ← Sidebar + AppBar + Outlet
-│       ├── pages/                  ← Dashboard, OrderImport, Reference, MLSync, 404
-│       ├── api/                    ← Axios client + endpoint modules
-│       ├── types/                  ← TypeScript interfaces (API + JSONB)
-│       ├── services/               ← Data service layer (multi-DB toggle)
-│       ├── hooks/                  ← useD3 (D3 + React integration)
-│       └── components/common/      ← Reusable UI components
+│       ├── index.css               ← Tailwind v4 base + @theme design tokens
+│       ├── pages/                  ← Dashboard, OrderImport, Reference, MLSync, Login, 404
+│       ├── api/
+│       │   ├── base/               ← Axios client + endpoint modules
+│       │   ├── base_types/         ← TypeScript interfaces (API + JSONB)
+│       │   ├── contexts/           ← AuthContext (JWT auth state)
+│       │   └── services/           ← Data service layer (multi-DB toggle)
+│       └── components/
+│           ├── auth/               ← ProtectedRoute
+│           ├── hooks/              ← useD3, useIsMobile
+│           └── layout/             ← MainLayout (sidebar + topbar), PageHeader
 │
 └── docs/                           ← all documentation (project root)
     ├── official_documentation/
@@ -118,7 +122,9 @@ WOMS-FYP-NEW/                       ← repository root
     │   ├── web-api.md                      ← API endpoint documentation
     │   ├── frontend-development-progress.md ← frontend change log
     │   └── frontend-error.md               ← frontend error tracker
-    └── planning_phase/                     ← design notes (5 files)
+    └── planning_phase/                     ← design notes
+        ├── Backend/                        ← backend design (5 files)
+        └── Frontend/                       ← frontend design plans
 ```
 
 ---
