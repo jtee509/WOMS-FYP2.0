@@ -24,8 +24,7 @@ Complete database schema documentation for the Warehouse Order Management System
 10. [Triggers](#triggers)
 11. [Indexes](#indexes)
 12. [Views](#views)
-13. [Connection Troubleshooting](#connection-troubleshooting)
-14. [Quick Reference](#quick-reference)
+13. [Quick Reference](#quick-reference)
 
 ---
 
@@ -2725,27 +2724,6 @@ Order price adjustments with related exchanges and modifications.
 Summary of all order operations including returns, exchanges, modifications, and adjustments.
 
 **Key Columns:** order_id, total_returns, active_returns, total_exchanges, active_exchanges, total_modifications, total_adjustment_applied
-
----
-
-## Connection Troubleshooting
-
-### Backend Cannot Connect to PostgreSQL via .env
-
-**Symptoms:** `[WARN] Database connection failed` on startup, or `asyncpg.exceptions.InvalidPasswordError`, `connection refused`, etc.
-
-**Root causes and fixes:**
-
-| Cause | Fix |
-|-------|-----|
-| **Unexpanded `${VAR}` in DATABASE_URL** | `.env` files do NOT expand `${DATABASE_USER}` etc. If you copied from a template with placeholders, the backend tried to connect with literal username `${DATABASE_USER}`. **Fix:** Remove or leave empty `DATABASE_URL` and `DATABASE_URL_SYNC` in `.env`; the config assembles the URL from `DATABASE_HOST`, `DATABASE_USER`, `DATABASE_PASSWORD`, etc. Or run `python setup_env.py` to generate a correct `.env`. |
-| **.env not found** | Pydantic silently skips non-existent `.env`. The config looks for `.env` at: project root, `backend/`, current directory. **Fix:** Run `python setup_env.py` from project root to create `.env`. Ensure you run the backend from project root or `backend/`. |
-| **Wrong DATABASE_USER** | If you ran `setup_env.py`, it creates `woms_user` (not `postgres`). Use `DATABASE_USER=woms_user` and the generated `DATABASE_PASSWORD`. |
-| **Password mismatch** | If you changed `.env` password but not PostgreSQL: run `python fix_db_password.py` to sync the DB user password with `.env`. |
-| **PostgreSQL not running** | Start PostgreSQL service. On Windows: Services, or `pg_ctl start`. |
-| **Special characters in password** | If using a manual password with `@`, `#`, etc., URL-encode it in `DATABASE_URL` or use the individual vars (config assembles the URL safely). |
-
-**Config behavior (as of 2026-02):** `app/config.py` rejects `DATABASE_URL` if it contains `${` (unexpanded template) and falls back to assembling from `DATABASE_HOST`, `DATABASE_USER`, `DATABASE_PASSWORD`, `DATABASE_PORT`, `DATABASE_NAME`.
 
 ---
 

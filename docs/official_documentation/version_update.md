@@ -7,6 +7,47 @@ Version scheme: `PRE-ALPHA vX.Y.Z`
 
 ---
 
+## [PRE-ALPHA v0.5.3.1 | 2026-02-28 ~00:00] — Database Documentation Cleanup
+
+### Files Changed
+
+#### `docs/official_documentation/database_structure.md`
+**What:** Removed "Connection Troubleshooting" section and its table of contents entry.
+
+**Why:** Section was operational notes specific to local dev setup, not schema documentation.
+Belongs in README or setup guides — not the canonical DB structure reference.
+
+---
+
+## [PRE-ALPHA v0.5.3 | 2026-02-27 ~00:30] — Settings Page with Item Attributes CRUD
+
+**What changed:** Added a Settings page with full CRUD for 5 item-attribute lookup tables: **Status**, **ItemType**, **Category**, **Brand**, and **BaseUOM**. Each table supports create, inline edit, and delete via a reusable `AttributeCard` component.
+
+### Backend
+
+| File | Change | Why |
+|------|--------|-----|
+| `backend/app/schemas/items.py` | Added 10 Create/Update Pydantic schemas (2 per table) | Validate POST/PATCH request bodies; Update schemas use `Optional` fields for partial updates |
+| `backend/app/routers/items.py` | Added 15 new endpoints: POST/PATCH/DELETE for each of 5 lookup tables | Full write API for item attributes; 201 on create, 409 on duplicate or FK violation, 204 on delete |
+| `backend/app/main.py` | Registered `items_router` at `/api/v1/items` | Router existed but was not active — now mounted |
+
+### Frontend
+
+| File | Change | Why |
+|------|--------|-----|
+| `frontend/src/api/base_types/items.ts` | **New** — `AttributeItem` interface (`{ id, name }`) | Generic type for all 5 lookup tables |
+| `frontend/src/api/base/items.ts` | **New** — 20 API functions + 5 normaliser helpers | 4 functions per table (list/create/update/delete); normalisers map backend field names to `{ id, name }` |
+| `frontend/src/components/settings/AttributeCard.tsx` | **New** — reusable CRUD card component | Inline add/edit/delete with Enter/Escape keys, error handling, loading spinner |
+| `frontend/src/pages/SettingsPage.tsx` | **New** — Settings page with responsive grid of 5 AttributeCards | `Promise.allSettled` loads all 5 tables; `makeHandlers` factory avoids CRUD callback repetition |
+| `frontend/src/App.tsx` | Added `/settings` route inside protected group | Route to SettingsPage |
+| `frontend/src/components/layout/MainLayout.tsx` | Added Settings nav item with `SettingsIcon` | Sidebar navigation entry |
+
+### Build Result
+- TypeScript: zero errors
+- Production build: 425.02 kB JS, 16.62 kB CSS
+
+---
+
 ## [PRE-ALPHA v0.5.1.6 | 2026-02-26 ~23:30] — Convert layouts/ + components/ to Tailwind CSS, remove MUI theme
 
 **What changed:** Migrated MainLayout, ProtectedRoute, and PageHeader from MUI components to native HTML + Tailwind CSS. Created custom `useIsMobile` hook to replace MUI `useMediaQuery`. Removed MUI `ThemeProvider` and `theme.ts` — all design tokens now live in `index.css` `@theme`. Uninstalled `lucide-react`. MUI icons are retained as the only MUI dependency in use.
