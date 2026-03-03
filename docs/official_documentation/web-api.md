@@ -308,18 +308,148 @@ All API endpoints are documented here. When creating or modifying an API, update
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/api/v1/items` | No | List items (paginated, search, filter by status/category/brand) |
+| GET | `/api/v1/items` | No | List items (paginated, search, filter by is_active/category/brand) |
 | GET | `/api/v1/items/{item_id}` | No | Get single item with nested lookups |
 | POST | `/api/v1/items` | Yes | Create item |
 | PATCH | `/api/v1/items/{item_id}` | Yes | Update item (partial) |
 | DELETE | `/api/v1/items/{item_id}` | Yes | Soft-delete item |
-| GET | `/api/v1/items/statuses` | No | List all statuses |
+| POST | `/api/v1/items/upload-image` | Yes | Upload item image (multipart, returns URL) |
+| GET | `/api/v1/items/counts` | No | Get tab counts (all, live, unpublished, deleted) |
 | GET | `/api/v1/items/types` | No | List all item types |
+| POST | `/api/v1/items/types` | Yes | Create item type (201, 409 on duplicate) |
+| PATCH | `/api/v1/items/types/{item_type_id}` | Yes | Update item type (404/409) |
+| DELETE | `/api/v1/items/types/{item_type_id}` | Yes | Delete item type (204, 409 if referenced) |
 | GET | `/api/v1/items/categories` | No | List all categories |
+| POST | `/api/v1/items/categories` | Yes | Create category (201, 409 on duplicate) |
+| PATCH | `/api/v1/items/categories/{category_id}` | Yes | Update category (404/409) |
+| DELETE | `/api/v1/items/categories/{category_id}` | Yes | Delete category (204, 409 if referenced) |
 | GET | `/api/v1/items/brands` | No | List all brands |
+| POST | `/api/v1/items/brands` | Yes | Create brand (201, 409 on duplicate) |
+| PATCH | `/api/v1/items/brands/{brand_id}` | Yes | Update brand (404/409) |
+| DELETE | `/api/v1/items/brands/{brand_id}` | Yes | Delete brand (204, 409 if referenced) |
 | GET | `/api/v1/items/uoms` | No | List all base UOMs |
+| POST | `/api/v1/items/uoms` | Yes | Create UOM (201, 409 on duplicate) |
+| PATCH | `/api/v1/items/uoms/{uom_id}` | Yes | Update UOM (404/409) |
+| DELETE | `/api/v1/items/uoms/{uom_id}` | Yes | Delete UOM (204, 409 if referenced) |
 
-**Pagination params:** `?page=1&page_size=20&search=term&status_id=1&category_id=2&brand_id=3`
+**Pagination params:** `?page=1&page_size=20&search=term&is_active=true&category_id=2&brand_id=3&item_type_id=1&include_deleted=false`
+
+### ItemCreate (POST `/api/v1/items` request body)
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `item_name` | string (max 500) | Yes | — | Product name |
+| `master_sku` | string (max 100) | Yes | — | Internal SKU code (unique) |
+| `sku_name` | string (max 500) | No | null | SKU display name |
+| `description` | string | No | null | Item description |
+| `image_url` | string (max 500) | No | null | URL/path to main product image (from upload endpoint) |
+| `uom_id` | integer | No | null | FK to base UOM |
+| `brand_id` | integer | No | null | FK to brand |
+| `item_type_id` | integer | No | null | FK to item type |
+| `category_id` | integer | No | null | FK to category |
+| `is_active` | boolean | No | true | Whether the item is active |
+| `parent_id` | integer | No | null | FK to parent item (for variations) |
+| `has_variation` | boolean | No | false | Whether item has child variations |
+| `variations_data` | object (JSON) | No | null | Freeform variation metadata |
+
+### ItemUpdate (PATCH `/api/v1/items/{item_id}` request body)
+
+All fields are optional. Only provided fields are updated.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `item_name` | string (max 500) | Product name |
+| `sku_name` | string (max 500) | SKU display name |
+| `description` | string | Item description |
+| `image_url` | string (max 500) | URL/path to main product image |
+| `uom_id` | integer | FK to base UOM |
+| `brand_id` | integer | FK to brand |
+| `item_type_id` | integer | FK to item type |
+| `category_id` | integer | FK to category |
+| `is_active` | boolean | Whether the item is active |
+| `has_variation` | boolean | Whether item has child variations |
+| `variations_data` | object (JSON) | Freeform variation metadata |
+
+### ItemRead (response body)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `item_id` | integer | Primary key |
+| `parent_id` | integer / null | FK to parent item |
+| `item_name` | string | Product name |
+| `master_sku` | string | Internal SKU code |
+| `sku_name` | string / null | SKU display name |
+| `description` | string / null | Item description |
+| `image_url` | string / null | URL/path to main product image |
+| `uom_id` | integer / null | FK to base UOM |
+| `brand_id` | integer / null | FK to brand |
+| `item_type_id` | integer / null | FK to item type |
+| `category_id` | integer / null | FK to category |
+| `is_active` | boolean | Whether the item is active |
+| `has_variation` | boolean | Whether item has child variations |
+| `variations_data` | object / null | Freeform variation metadata |
+| `created_at` | datetime | Record creation timestamp |
+| `updated_at` | datetime | Last update timestamp |
+| `deleted_at` | datetime / null | Soft-delete timestamp (null if not deleted) |
+| `uom` | BaseUOMRead / null | Nested UOM lookup (when joined) |
+| `brand` | BrandRead / null | Nested brand lookup (when joined) |
+| `item_type` | ItemTypeRead / null | Nested item type lookup (when joined) |
+| `category` | CategoryRead / null | Nested category lookup (when joined) |
+
+### `GET /api/v1/items/counts`
+
+**Description:** Returns item counts for tab-based status filtering UI.
+**Files:** `backend/app/routers/items.py`
+**Tags:** Items
+
+**Request:** No body. No required params.
+
+**Response:** `200 OK`
+```json
+{
+  "all": 150,
+  "live": 120,
+  "unpublished": 20,
+  "deleted": 10
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `all` | integer | Count of non-deleted items (deleted_at IS NULL) |
+| `live` | integer | Count of active, non-deleted items (is_active = true, deleted_at IS NULL) |
+| `unpublished` | integer | Count of inactive, non-deleted items (is_active = false, deleted_at IS NULL) |
+| `deleted` | integer | Count of soft-deleted items (deleted_at IS NOT NULL) |
+
+### `POST /api/v1/items/upload-image`
+
+**Description:** Upload a product image for an item. Returns the URL path to the saved file. Images are stored in `backend/uploads/items/`.
+**Files:** `backend/app/routers/items.py`
+**Tags:** Items
+**Auth:** Bearer JWT required
+
+**Request:** `multipart/form-data`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `file` | File | Yes | Image file (JPEG, PNG, WebP, or GIF) |
+
+**Validation:**
+- Allowed content types: `image/jpeg`, `image/png`, `image/webp`, `image/gif`
+- Maximum file size: 5 MB
+
+**Response:** `200 OK`
+```json
+{
+  "url": "/uploads/items/a1b2c3d4e5f6_product-photo.jpg"
+}
+```
+
+**Error Responses:**
+- `400` — Invalid file type or file too large
+- `401` — Not authenticated
+
+**Static file serving:** Uploaded images are served at `GET /uploads/items/{filename}` via FastAPI StaticFiles mount.
 
 ---
 
@@ -425,6 +555,9 @@ The frontend API client is organised as follows:
 | `frontend/src/api/orders.ts` | `POST /api/v1/orders/import` | `importOrders(platform, sellerId, file)` |
 | `frontend/src/api/reference.ts` | `POST /api/v1/reference/load-*` | `loadPlatforms(file)`, `loadSellers(sellersFile, platformsFile?)`, `loadItems(file)` |
 | `frontend/src/api/mlSync.ts` | `POST /api/v1/ml/*` | `syncStaging(request?)`, `initSchema()` |
+| `frontend/src/api/base/items.ts` | `GET/POST/PATCH/DELETE /api/v1/items/{types,categories,brands,uoms,statuses}` | `list*()`, `create*(name)`, `update*(id, name)`, `delete*(id)` — 20 functions total |
+| `frontend/src/api/base/items.ts` | `GET/POST/PATCH/DELETE /api/v1/items` | `listItems(params)`, `getItem(id)`, `createItem(data)`, `updateItem(id, data)`, `deleteItem(id)` — 5 item CRUD functions |
+| `frontend/src/api/base/items.ts` | `GET /api/v1/items/counts` | `getItemCounts()` — returns tab counts for Items list page |
 
 ---
 

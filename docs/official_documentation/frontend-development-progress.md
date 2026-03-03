@@ -14,10 +14,260 @@ Format: `[PRE-ALPHA vX.Y.Z | YYYY-MM-DD HH:MM] — Brief title`
 4. Comprehensive API testing for all endpoints
 5. UI color templates unchanged unless explicitly approved
 6. All errors logged in `frontend-error.md` (mark as fixed when resolved)
-7. **Component Architecture**: Dedicated component section (`src/components/`) for reusable functions (e.g., printing utilities, shared UI widgets)
+7. **File Organisation**: Every new page and ALL its page-specific items (sub-components, helpers, types) must live inside a dedicated subfolder under `src/pages/` (e.g., `src/pages/settings/SettingsPage.tsx`, `src/pages/settings/AttributeCard.tsx`). Create the subfolder if it does not yet exist. `src/components/` is strictly reserved for universal/shared components used across multiple pages (e.g., DataTable, PageHeader, Sidebar)
 8. **Styling Standards**: All CSS must be in separate files — no inline styles or in-component style blocks
 9. **Routing Configuration**: Use `BrowserRouter` for application routing
 10. **Tailwind CSS**: Use Tailwind CSS v4 as the base styling framework — all new styling must use Tailwind utility classes. MUI `sx` prop and `.styles.ts` files are deprecated and will be migrated to Tailwind
+
+---
+
+## [PRE-ALPHA v0.5.10 | 2026-03-03 14:00] — Create Item: Toggle Switch, Validation & Backend Integrity
+
+**What changed:** Replaced the Status `<select>` with a CSS toggle switch, tightened client-side validation on `master_sku` (no-spaces rule) and `sku_name` (max 500), standardized all select placeholders to "Select", removed the string-to-bool coercion hack from `onSubmit`, and added `disabled:cursor-not-allowed` to the submit button.
+
+**Why:** A boolean field should use a boolean control. The previous select required a runtime type coercion and lacked uniqueness feedback for `master_sku`. The `sku_name` max-length was inconsistent with the backend schema.
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `frontend/src/pages/items/ItemFormPage.tsx` | Status toggle switch (watch+setValue), master_sku no-spaces validation, sku_name maxLength 500, select placeholder "Select", Row 4 → 2-col + toggle row, remove is_active string coercion, disabled:cursor-not-allowed on submit |
+
+### Validation Rules (as-built)
+
+| Field | Rule | Error Message |
+|-------|------|---------------|
+| item_name | Required, max 500 chars | "Item name is required" / "Max 500 characters" |
+| master_sku | Required, max 100 chars, no whitespace | "Master SKU is required" / "Max 100 characters" / "Master SKU must not contain spaces" |
+| sku_name | Optional, max 500 chars | "Max 500 characters" |
+
+---
+
+## [PRE-ALPHA v0.5.9 | 2026-03-03 12:00] — VariationBuilder Redesign
+
+**What changed:** Completely redesigned the `VariationBuilder` component to match the specified e-commerce seller-centre style UI, and removed `price`/`stock` from variation combinations.
+
+**Why:** The previous chip-based UI differed from the target design. The new layout uses a 2-column option grid with character counters, drag handles, and per-option delete icons — more ergonomic for product managers entering variation data. Price and stock are removed from variations as they belong in the pricing/order module, not the item catalogue.
+
+### Key Changes
+
+1. **Option grid** — 2-column layout; each option shows an inline `N/20` character counter, a `DragIndicatorIcon` handle (visual), and a delete button
+2. **Name counter** — Variation name input now shows `N/14` inline counter on the right
+3. **Max 5 options** — Draft "Input" slot appears after committed options up to the 5-option cap
+4. **Section header** — Added `• Variations` label above the builder panels
+5. **Combination table** — Price and Stock columns removed; only Image + variation values + SKU remain
+6. **Type cleanup** — Removed `price` and `stock` fields from `VariationCombination` interface and all utility functions
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `frontend/src/pages/items/VariationBuilder.types.ts` | Removed `price`, `stock` from `VariationCombination` |
+| `frontend/src/pages/items/VariationBuilder.utils.ts` | Updated default combo shape; strip price/stock in `migrateOldFormat` |
+| `frontend/src/pages/items/VariationBuilder.tsx` | Full redesign — 2-column option grid, char counters, drag handles, simplified combination table |
+
+---
+
+## [PRE-ALPHA v0.5.8 | 2026-03-02 21:00] — Item Main Image Upload
+
+**What changed:** Added a product image upload section to the Item Create/Edit form. Users can click to upload an image (JPG/PNG/WebP/GIF, max 5 MB), see a live preview, and remove the image. The upload goes to a new `POST /items/upload-image` endpoint which stores files locally and returns a URL path. The URL is sent as part of the normal item JSON payload.
+
+**Why:** Items had no visual representation. Product images are essential for e-commerce catalog management and visual identification in the item list.
+
+### Key Features
+
+1. **Click-to-upload area** — 128x128 dashed-border placeholder with ImageIcon; shows preview after upload
+2. **Upload-first pattern** — Image uploaded via separate endpoint, URL stored in `image_url` column
+3. **Validation** — Content type (4 image formats) + size limit (5 MB) enforced on backend
+4. **Remove image** — Click "Remove image" to clear, sets `image_url` to null on save
+5. **Edit mode** — Existing image loads and displays on edit
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `frontend/src/api/base_types/items.ts` | Added `image_url` to TypeScript types |
+| `frontend/src/api/base/items.ts` | Added `uploadItemImage()` API function |
+| `frontend/src/pages/ItemFormPage.tsx` | Added image upload UI section at top of form |
+| `frontend/vite.config.ts` | Added `/uploads` proxy rule for dev server |
+
+### Build
+
+- Production: 493.07 kB JS, 25.86 kB CSS (zero errors)
+
+---
+
+## [PRE-ALPHA v0.5.7 | 2026-03-02 17:30] — VariationBuilder Component
+
+**What changed:** Replaced the basic variation section in ItemFormPage with a full e-commerce-style VariationBuilder. Users can now define up to 2 variation dimensions with auto-growing option inputs, and a dynamic combination table generates rows for every cartesian product with per-variant SKU, Price, Stock, and image placeholder fields. Includes batch-apply for mass updates.
+
+**Why:** The old variation section was just text rows (attribute name + comma-separated values) with no per-variant data. Sellers need a matrix view to manage individual variation SKUs, prices, and stock levels — matching the UX of Shopee/Lazada seller centers.
+
+### Key Features
+
+1. **Variation Builder** — Define variation name + options with auto-grow inputs (type + Enter to add)
+2. **Max 2 Levels** — Primary (e.g. Colour) + optional secondary (e.g. Size)
+3. **Combination Table** — Auto-generated rows for every cartesian product
+4. **Per-Variant Fields** — SKU, Price, Stock, and image placeholder per combination row
+5. **Batch Apply** — Mass-update Price/Stock/SKU across all rows at once
+6. **Backwards Compatibility** — `migrateOldFormat()` auto-generates combinations from old attribute-only data
+
+### New Files (all in `src/pages/items/`)
+
+| File | Purpose |
+|------|---------|
+| `VariationBuilder.types.ts` | Shared interfaces: `VariationsData`, `VariationAttribute`, `VariationCombination` |
+| `VariationBuilder.utils.ts` | Pure functions: `cartesianProduct()`, `syncCombinations()`, `migrateOldFormat()` |
+| `VariationBuilder.tsx` | Main component + `VariationLevel` and `CombinationTable` sub-components |
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `ItemFormPage.tsx` | Removed `VariationRow`, `useFieldArray`, old helpers; added `useState<VariationsData>` + `<VariationBuilder>` integration |
+
+### Build
+
+- Production: 491.28 kB JS, 25.68 kB CSS (zero errors)
+
+---
+
+## [PRE-ALPHA v0.5.6.1 | 2026-03-02 16:00] — Move Item Type to Tabs Row
+
+**What changed:** Relocated the "Item Type" dropdown from the lower filter row to the tabs row, right-aligned via `justify-between`. Removed Item Type props/state/fetch from `ItemFilters.tsx`; added them to `ItemsListPage.tsx`.
+
+**Why:** Item Type (Outgoing Product, Raw Material, Office Supply) is a workspace-level toggle, not a search filter. Elevating it to the tabs row makes it visually distinct and frees space in the filter bar for the remaining Search + Category + Brand controls.
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `frontend/src/pages/items/ItemFilters.tsx` | Removed `itemTypeId`, `onItemTypeChange`, `itemTypes` state, `listItemTypes` import, and `<select>` |
+| `frontend/src/pages/ItemsListPage.tsx` | Added `itemTypes` state + fetch; Item Type `<select>` in tabs row with `flex-wrap justify-between`; cleaned up `<ItemFilters>` props |
+
+---
+
+## [PRE-ALPHA v0.5.6 | 2026-03-02] — Items Page Redesign (List + Form)
+
+**What changed:** Redesigned the Items list page and Create/Edit form to match a reference admin dashboard design. Added tab-based status filtering with live counts, checkbox row selection, page-number pagination, combined item column, and flattened the multi-tab form into a single-card layout.
+
+**Why:** The previous v0.5.4 implementation was functional but didn't match the target UX. This redesign improves: (1) status visibility via tab counts, (2) filtering with inline search + Item Type dropdown, (3) data density with combined columns, and (4) form usability by showing all fields at once.
+
+### Key Changes
+
+1. **Tab-based Status Filtering** — All / Live / Unpublished / Deleted tabs with real-time counts from new `GET /items/counts` endpoint
+2. **Combined Items Column** — Image placeholder + item name + SKU in a single column
+3. **Checkbox Selection** — DataTable now supports `selectable` prop with select-all/individual checkboxes
+4. **Page-Number Pagination** — Replaced prev/next with clickable page numbers, ellipsis, first/last buttons
+5. **Inline Filters** — Search + Category + Brand dropdowns in filter bar (removed Active/Inactive — tabs handle it; Item Type moved to tabs row in v0.5.6.1)
+6. **Single-Card Form** — Removed tab layout; all fields visible in one card (Name+SKU → Description → Category+Brand → UOM+Type+Status → Variations)
+7. **Status Badges** — Active (green), Inactive (gray), Deleted (red) inline badges in list
+
+### File Organization
+
+- Moved `ItemFilters.tsx` from `components/items/` → `pages/items/` (page-specific component rule: `components/` is for universal/shared components only)
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `frontend/src/api/base/items.ts` | Added `getItemCounts()`, `item_type_id` + `include_deleted` params |
+| `frontend/src/api/base_types/items.ts` | Added `deleted_at` to `ItemRead` |
+| `frontend/src/components/common/DataTable.tsx` | Added `selectable`, `noCard` props; page-number pagination |
+| `frontend/src/pages/items/ItemFilters.tsx` | Relocated + added search input + Item Type dropdown |
+| `frontend/src/pages/ItemsListPage.tsx` | Full redesign with tabs, card wrapper, new columns |
+| `frontend/src/pages/ItemFormPage.tsx` | Flattened tabs → single card, reordered fields |
+
+### Build
+
+- Production: 489.60 kB JS, 24.55 kB CSS (zero errors)
+
+---
+
+## [PRE-ALPHA v0.5.4 | 2026-03-02] — Items Module (Master Catalog)
+
+**What changed:** Built the complete Items module frontend with a paginated catalog list, advanced filtering, variation row expansion, and a multi-tab create/edit form.
+
+**Why:** The Items module is the core data management interface — users need to browse, search, create, and edit their product catalog with variation support (size, color, etc.).
+
+### Key Features
+
+1. **Item Catalog List** (`/catalog/items`)
+   - Server-side paginated DataTable (reusable component)
+   - Global search by item name or master SKU (debounced)
+   - Column filters: Status, Category, Brand (loaded from backend)
+   - Row expansion: click parent items to view child variations inline
+   - Edit and Delete actions per row (soft-delete with confirmation)
+
+2. **Item Create/Edit Form** (`/catalog/items/new`, `/catalog/items/:id/edit`)
+   - Powered by `react-hook-form` with `useFieldArray` for dynamic variations
+   - **Tab 1 — Basic Info**: 9 form fields (name, SKU, description, 5 dropdown selects for lookups, UOM)
+   - **Tab 2 — Variations**: Toggle `has_variation`, add attribute rows (name + comma-separated values), auto-generated SKU combination preview grid
+   - Edit mode: loads existing item data, master_sku is readonly
+   - Validation: required fields, max length enforcement
+
+3. **Reusable DataTable** (`src/components/common/DataTable.tsx`)
+   - Generic `<T>` component with typed columns
+   - Pagination controls (prev/next, page size selector, "Showing X-Y of Z")
+   - Optional search bar, row expansion, header actions slot
+   - Consistent Tailwind styling matching project patterns
+
+4. **Sidebar Navigation**
+   - New "Catalog" collapsible group with `SubMenu` (react-pro-sidebar)
+   - "Items" link with active state detection for `/catalog/*` paths
+
+### New Dependencies
+- `react-hook-form` (multi-tab form with dynamic arrays)
+
+### Files Created
+- `frontend/src/components/common/DataTable.tsx`
+- `frontend/src/components/items/ItemFilters.tsx`
+- `frontend/src/pages/ItemsListPage.tsx`
+- `frontend/src/pages/ItemFormPage.tsx`
+
+### Files Modified
+- `frontend/src/api/base_types/items.ts` — added `ItemRead`, `ItemCreate`, `ItemUpdate`, `PaginatedResponse<T>`
+- `frontend/src/api/base/items.ts` — added 5 item CRUD functions
+- `frontend/src/App.tsx` — added 3 catalog routes
+- `frontend/src/components/layout/MainLayout.tsx` — added Catalog SubMenu nav group
+
+### Build
+- Production: 488.06 kB JS, 24.11 kB CSS (zero errors)
+
+---
+
+## [PRE-ALPHA v0.5.3 | 2026-02-27 ~00:30] — Settings Page with Item Attributes CRUD
+
+**What changed:** Added a new Settings page (`/settings`) with full CRUD for 5 item-attribute lookup tables: Status, ItemType, Category, Brand, and BaseUOM. Built a reusable `AttributeCard` component that handles inline add/edit/delete for any ID+name pair. Added 20 API functions with normaliser helpers to map varying backend field names to a generic `{ id, name }` interface. Settings nav item added to sidebar.
+
+### New Files
+
+| File | Purpose |
+|------|---------|
+| `src/api/base_types/items.ts` | `AttributeItem` interface — generic `{ id: number; name: string }` |
+| `src/api/base/items.ts` | 20 API functions (4 per table) + 5 normaliser helpers |
+| `src/components/settings/AttributeCard.tsx` | Reusable CRUD card: inline add/edit/delete, Enter/Escape keys, error display, loading spinner |
+| `src/pages/SettingsPage.tsx` | Settings page with responsive grid (`md:grid-cols-2 xl:grid-cols-3`) of 5 AttributeCards |
+
+### Files Modified
+
+| File | Change | Why |
+|------|--------|-----|
+| `src/App.tsx` | Added `/settings` route inside protected group | Route to SettingsPage |
+| `src/components/layout/MainLayout.tsx` | Added Settings nav item with `SettingsIcon` | Sidebar navigation entry |
+
+### Design Decisions
+
+- **Generic `AttributeItem` type**: All 5 tables have identical structure after normalisation — one component, one interface
+- **Normaliser pattern**: Backend uses `status_id`/`status_name`, `uom_id`/`uom_name`, etc. Normalisers at the API boundary convert to uniform `{ id, name }`
+- **`Promise.allSettled`**: Loads all 5 tables independently — one table's failure doesn't block others
+- **`makeHandlers` factory**: Generates `onCreate`/`onUpdate`/`onDelete` callbacks for each table without repetition
+- **MUI icons only**: `AddIcon`, `EditIcon`, `DeleteIcon` from `@mui/icons-material` — consistent with existing icon approach
+
+### Build Result
+
+- TypeScript: zero errors
+- Production build: 425.02 kB JS (+8 kB from 5 new API functions + SettingsPage), 16.62 kB CSS
 
 ---
 

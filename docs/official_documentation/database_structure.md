@@ -5,7 +5,7 @@ Complete database schema documentation for the Warehouse Order Management System
 **Database:** PostgreSQL 13+  
 **ORM:** SQLModel (SQLAlchemy + Pydantic)  
 **Migration Tool:** Alembic  
-**Total Tables:** 47  
+**Total Tables:** 46  
 **Total Views:** 12  
 
 ---
@@ -35,13 +35,13 @@ Complete database schema documentation for the Warehouse Order Management System
 | Module | Tables | Description |
 |--------|--------|-------------|
 | **Users** | 4 | Authentication, authorization, action types, audit logging |
-| **Items** | 7 | Product catalog, variations, categories, brands, version history |
+| **Items** | 6 | Product catalog, variations, categories, brands, version history |
 | **Warehouse** | 11 | Physical locations, inventory tracking, alerts, stock management |
 | **Orders** | 10 | Order processing, platform integration, SKU translation, cancellations |
 | **Order Import** | 2 | Lazada/Shopee order uploads, raw copies, staging for normalization |
 | **Order Operations** | 6 | Returns, exchanges, modifications, price adjustments |
 | **Delivery** | 9 | Fleet management, drivers, trips, tracking status |
-| **Total** | **47** | |
+| **Total** | **46** | |
 
 ### Key Features
 
@@ -128,11 +128,6 @@ erDiagram
     %% ========================================
     %% ITEMS MODULE
     %% ========================================
-    status {
-        int status_id PK
-        varchar100 status_name UK
-    }
-    
     item_type {
         int item_type_id PK
         varchar100 item_type_name UK
@@ -159,13 +154,12 @@ erDiagram
         varchar500 item_name
         varchar100 master_sku UK
         varchar500 sku_name
-        int product_number
         text description
         int uom_id FK
         int brand_id FK
-        int status_id FK
         int item_type_id FK
         int category_id FK
+        boolean is_active
         boolean has_variation
         jsonb variations_data
         timestamp deleted_at
@@ -650,7 +644,6 @@ erDiagram
     
     %% Items Module
     items ||--o{ items : "parent_id"
-    status ||--o{ items : "status_id"
     item_type ||--o{ items : "item_type_id"
     category ||--o{ items : "category_id"
     brand ||--o{ items : "brand_id"
@@ -909,7 +902,7 @@ System-wide audit trail with JSONB change tracking.
 **JSONB Structure - `old_data` / `new_data`:**
 ```json
 {
-  "status_id": 1,
+  "is_active": true,
   "item_name": "Product Name",
   "updated_at": "2024-01-15T10:30:00Z"
 }
@@ -923,44 +916,38 @@ System-wide audit trail with JSONB change tracking.
 
 ```mermaid
 erDiagram
-    status {
-        int status_id PK "SERIAL PRIMARY KEY"
-        varchar100 status_name "UNIQUE NOT NULL INDEX"
-    }
-    
     item_type {
         int item_type_id PK "SERIAL PRIMARY KEY"
         varchar100 item_type_name "UNIQUE NOT NULL INDEX"
     }
-    
+
     category {
         int category_id PK "SERIAL PRIMARY KEY"
         varchar100 category_name "UNIQUE NOT NULL INDEX"
     }
-    
+
     brand {
         int brand_id PK "SERIAL PRIMARY KEY"
         varchar200 brand_name "UNIQUE NOT NULL INDEX"
     }
-    
+
     base_uom {
         int uom_id PK "SERIAL PRIMARY KEY"
         varchar50 uom_name "UNIQUE NOT NULL INDEX"
     }
-    
+
     items {
         int item_id PK "SERIAL PRIMARY KEY"
         int parent_id FK "Self-ref for variations INDEX"
         varchar500 item_name "NOT NULL INDEX"
         varchar100 master_sku "UNIQUE NOT NULL INDEX"
         varchar500 sku_name "SKU display name from Excel"
-        int product_number "Product family number from Excel No."
         text description "Product description"
         int uom_id FK "base_uom reference"
         int brand_id FK "brand reference"
-        int status_id FK "status reference"
         int item_type_id FK "item_type reference"
         int category_id FK "category reference"
+        boolean is_active "DEFAULT TRUE INDEX"
         boolean has_variation "DEFAULT FALSE"
         jsonb variations_data "Variation attributes"
         timestamp deleted_at "Soft delete INDEX"
@@ -968,7 +955,7 @@ erDiagram
         timestamp created_at "DEFAULT NOW()"
         timestamp updated_at "DEFAULT NOW()"
     }
-    
+
     items_history {
         int history_id PK "SERIAL PRIMARY KEY"
         int reference_id FK "items.item_id INDEX"
@@ -977,32 +964,14 @@ erDiagram
         varchar20 operation "INSERT/UPDATE/DELETE INDEX"
         jsonb snapshot_data "Changed fields NOT NULL"
     }
-    
+
     items ||--o{ items : "parent_id"
-    status ||--o{ items : "status_id"
     item_type ||--o{ items : "item_type_id"
     category ||--o{ items : "category_id"
     brand ||--o{ items : "brand_id"
     base_uom ||--o{ items : "uom_id"
     items ||--o{ items_history : "reference_id"
 ```
-
-### Table: `status`
-
-Item status lookup table.
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `status_id` | SERIAL | PRIMARY KEY | Unique identifier |
-| `status_name` | VARCHAR(100) | UNIQUE, NOT NULL, INDEX | Status name |
-
-**Sample Data:**
-```sql
-INSERT INTO status (status_name) VALUES 
-('Active'), ('Inactive'), ('Discontinued'), ('Out of Stock'), ('Pending');
-```
-
----
 
 ### Table: `item_type`
 
@@ -1079,9 +1048,9 @@ Main item/product entity with variations support.
 | `description` | TEXT | | Product description |
 | `uom_id` | INTEGER | FK → base_uom.uom_id | Unit of measure |
 | `brand_id` | INTEGER | FK → brand.brand_id | Brand reference |
-| `status_id` | INTEGER | FK → status.status_id | Status reference |
 | `item_type_id` | INTEGER | FK → item_type.item_type_id | Type reference |
 | `category_id` | INTEGER | FK → category.category_id | Category reference |
+| `is_active` | BOOLEAN | DEFAULT TRUE, INDEX | Active status flag (replaces old status_id FK) |
 | `has_variation` | BOOLEAN | DEFAULT FALSE | Has child variations |
 | `variations_data` | JSONB | | Variation attributes |
 | `deleted_at` | TIMESTAMP | INDEX | Soft delete timestamp |
@@ -1122,10 +1091,10 @@ Version control snapshot for item changes.
 ```json
 {
   "item_name": "New Name",
-  "status_id": 2,
+  "is_active": false,
   "previous_values": {
     "item_name": "Old Name",
-    "status_id": 1
+    "is_active": true
   }
 }
 ```
@@ -2589,6 +2558,12 @@ Order tracking status history.
 | `idx_audit_old_data_gin` | audit_log | old_data | Search audit old data |
 | `idx_audit_new_data_gin` | audit_log | new_data | Search audit new data |
 
+### B-Tree Indexes
+
+| Index | Table | Column | Purpose |
+|-------|-------|--------|---------|
+| `idx_items_is_active` | items | is_active | Filter items by active/inactive status |
+
 ### Composite Indexes
 
 | Index | Table | Columns | Purpose |
@@ -2616,7 +2591,7 @@ Order tracking status history.
 
 | Index | Table | Condition | Purpose |
 |-------|-------|-----------|---------|
-| `idx_items_active` | items | deleted_at IS NULL | Active items only |
+| `idx_items_active` | items | deleted_at IS NULL | Non-deleted items only |
 | `idx_warehouse_active` | warehouse | is_active = TRUE | Active warehouses |
 | `idx_sellers_active` | seller | is_active = TRUE | Active sellers |
 | `idx_orders_pending` | orders | order_status = 'pending' | Pending order queue |
@@ -2741,14 +2716,14 @@ alembic downgrade -1          # Rollback one migration
 
 ```
 Users:           4 tables
-Items:           7 tables
+Items:           6 tables
 Warehouse:      11 tables
 Orders:         10 tables
 Order Import:    2 tables (order_import schema)
 Order Operations: 6 tables
 Delivery:        9 tables
 ─────────────────────────────
-Total:          47 tables + 12 views
+Total:          46 tables + 12 views
 ```
 
 ### Common Queries

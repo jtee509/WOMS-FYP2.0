@@ -7,6 +7,360 @@ Version scheme: `PRE-ALPHA vX.Y.Z`
 
 ---
 
+## [PRE-ALPHA v0.5.10.1 | 2026-03-03] — Documentation Sync
+
+### Files Changed
+
+#### `docs/official_documentation/frontend-development-progress.md`
+**What:** Added progress entries for v0.5.3–v0.5.10; updated Rule 7 to the new file-organisation rule.
+**Why:** Sync accumulated frontend work into the official progress log; clarify that page files and their page-specific items belong inside `src/pages/<page>/`, not in `src/components/`.
+
+#### `docs/official_documentation/web-api.md`
+**What:** Added full Items API documentation — 20+ endpoints (CRUD for items, types, categories, brands, UOMs, image upload, counts).
+**Why:** All new endpoints added since v0.5.3 were undocumented in the API reference.
+
+#### `docs/official_documentation/database_structure.md`
+**What:** Minor cleanup of remaining local-dev notes not yet pushed.
+**Why:** Keep schema reference clean; operational notes belong in README/setup guides.
+
+---
+
+## [PRE-ALPHA v0.5.10 | 2026-03-03 14:00] — Create Item: Toggle Switch, Validation & Backend Integrity
+
+**What changed:** Hardened the Create/Edit Item form with a proper status toggle switch, comprehensive client-side validation (no-spaces rule on Master SKU, corrected field max-lengths), fixed select placeholder labels to "Select", and added backend 409 conflict handling for duplicate Master SKUs. Added a 15-test automated integration suite and a manual testing guide.
+
+**Why:** The previous Status field was a `<select>` with string values requiring a coercion hack. A toggle switch is more appropriate UX for a boolean status. The `master_sku` had no uniqueness validation on the frontend, and the backend returned an uninformative 500 on duplicate. `sku_name` max-length (200) didn't match the backend schema (500). These changes make the form robust, the API self-documenting on conflict, and add test coverage.
+
+### Backend Changes
+
+| File | Change | Why |
+|------|--------|-----|
+| `backend/app/routers/items.py` | Import `IntegrityError` from SQLAlchemy; wrap `create_item` flush in try/except → 409 with detail message on duplicate `master_sku` | Duplicate SKU previously returned unhandled 500; now returns a clear 409 Conflict |
+
+### Frontend Changes
+
+| File | Change | Why |
+|------|--------|-----|
+| `frontend/src/pages/items/ItemFormPage.tsx` | Replace Status `<select>` with a CSS toggle switch using `watch('is_active')` + `setValue` | Boolean field needs boolean UI; removes string-to-bool coercion hack from onSubmit |
+| `frontend/src/pages/items/ItemFormPage.tsx` | Add `validate: { noSpaces }` to `master_sku` registration | SKUs must not contain spaces; backend would reject them implicitly but UX is better with immediate feedback |
+| `frontend/src/pages/items/ItemFormPage.tsx` | Fix `sku_name` maxLength 200 → 500 | Schema defines max_length=500; frontend was more restrictive than the backend |
+| `frontend/src/pages/items/ItemFormPage.tsx` | Change select `<option value="">` labels from field names to "Select" | Consistent placeholder UX across all dropdowns |
+| `frontend/src/pages/items/ItemFormPage.tsx` | Row 4 changed from 3-col (UOM/ItemType/Status) to 2-col (UOM/ItemType) + separate Status toggle section | Toggle needs its own row for visual clarity |
+| `frontend/src/pages/items/ItemFormPage.tsx` | Add `disabled:cursor-not-allowed` to submit button | Clear disabled affordance when form is submitting |
+| `frontend/src/pages/items/ItemFormPage.tsx` | Remove `typeof data.is_active === 'string'` coercion in `onSubmit` | Toggle always sets a real boolean; coercion was a workaround for the old select |
+
+### Test Artefacts
+
+| File | Description |
+|------|-------------|
+| `backend/tests/test_items_create.py` | 15 pytest integration tests (TC-01 to TC-15): happy path, validation, auth, conflict, response structure, timestamps |
+| `docs/official_documentation/testing_items_create.md` | Manual testing guide: 6 sections (form validation, happy path, backend conflict, auth, image upload, automated run) |
+
+---
+
+## [PRE-ALPHA v0.5.9 | 2026-03-03 12:00] — VariationBuilder Redesign
+
+**What changed:** Completely redesigned the `VariationBuilder` component UI and removed `price`/`stock` from variation combinations.
+
+**Why:** The previous design used an auto-grow chip/input approach that didn't match the target e-commerce seller-centre style. The new design uses a 2-column option grid with character counters, drag-handle indicators, and per-option delete controls — matching the specified design reference. Price and stock are removed from variations as they will be managed elsewhere in the order/pricing module.
+
+### Frontend Changes
+
+| File | Change | Why |
+|------|--------|-----|
+| `frontend/src/pages/items/VariationBuilder.types.ts` | Removed `price` and `stock` from `VariationCombination` interface | Price/stock management removed from variation builder per design spec |
+| `frontend/src/pages/items/VariationBuilder.utils.ts` | Updated `syncCombinations` (new combos omit price/stock) and `migrateOldFormat` (strips price/stock from old DB data) | Type alignment; backwards-compatible migration of existing saved data |
+| `frontend/src/pages/items/VariationBuilder.tsx` | Full redesign: 2-column option grid with char counters (N/20), drag-handle icon per option, inline name counter (N/14), max 5 options per variation, `• Variations` section header; combination table now shows only Image + variation values + SKU (no Price/Stock columns) | Matches target design; simplifies the combination table |
+
+### Design Specifications
+
+- **Variation name input**: inline right-aligned counter `N/14` (max 14 chars), delete icon on far right
+- **Options**: 2-column grid; each option has counter `N/20`, `DragIndicatorIcon` handle, close/delete button
+- **Draft slot**: always visible "Input" placeholder with `0/20` counter until 5 options are reached
+- **Max options**: 5 per variation
+- **Max variations**: 2 (unchanged)
+- **Combination table columns**: Image | [Variation names…] | SKU (Price and Stock removed)
+- **Batch apply**: SKU-only (simplified from previous price+stock+SKU)
+
+---
+
+## [PRE-ALPHA v0.5.8 | 2026-03-02 21:00] — Item Main Image Upload
+
+**What changed:** Added full image upload capability to the Item Create/Edit form. A new "Product Image" section at the top of the form card lets users click to upload an image (JPG/PNG/WebP/GIF, max 5 MB), previews it inline, and includes a "Remove image" action. Images are stored on the local filesystem at `backend/uploads/items/` and served via FastAPI StaticFiles.
+
+**Why:** Items had no visual representation. E-commerce product management requires main product images for catalog display. The upload-first pattern (separate endpoint returns URL, URL included in item JSON payload) keeps the existing CRUD API simple while adding file handling.
+
+### Backend Changes
+
+| File | Change | Why |
+|------|--------|-----|
+| `backend/app/models/items.py` | Added `image_url` field (VARCHAR 500, nullable) | Store the path/URL of the uploaded main product image |
+| `backend/app/schemas/items.py` | Added `image_url` to `ItemCreate`, `ItemUpdate`, `ItemRead` | Expose image URL through the API |
+| `backend/app/routers/items.py` | Added `POST /items/upload-image` endpoint, updated `_item_to_read` | Handle multipart file upload with content-type/size validation, return URL |
+| `backend/app/main.py` | Mounted `StaticFiles` at `/uploads`, auto-create `uploads/items/` directory | Serve uploaded images via HTTP |
+| `backend/alembic/versions/20260302_..._f6a7b8c9d0e1` | Migration: add `image_url` column to `items` table | DB schema evolution |
+
+### Frontend Changes
+
+| File | Change | Why |
+|------|--------|-----|
+| `frontend/src/api/base_types/items.ts` | Added `image_url` to `ItemRead`, `ItemCreate`, `ItemUpdate` | TypeScript type alignment with backend |
+| `frontend/src/api/base/items.ts` | Added `uploadItemImage()` function (FormData POST) | API client for image upload |
+| `frontend/src/pages/ItemFormPage.tsx` | Added image upload area (click-to-upload, preview, remove), `imageUrl`/`imageUploading` state, wired into submit payload | Main UI for product image management |
+| `frontend/vite.config.ts` | Added `/uploads` proxy rule | Dev server forwards image requests to backend |
+
+### Upload Endpoint
+
+- **Route:** `POST /api/v1/items/upload-image`
+- **Auth:** JWT required
+- **Input:** `multipart/form-data` with `file` field
+- **Validation:** Content type (JPEG/PNG/WebP/GIF), max 5 MB
+- **Storage:** `backend/uploads/items/{uuid}_{filename}`
+- **Response:** `{ "url": "/uploads/items/{uuid}_{filename}" }`
+
+### Build
+
+- Production: 493.07 kB JS, 25.86 kB CSS (zero TypeScript errors)
+
+---
+
+## [PRE-ALPHA v0.5.7 | 2026-03-02 17:30] — VariationBuilder Component (Dynamic Variation Matrix)
+
+**What changed:** Replaced the basic variation attribute rows in the Item Create/Edit form with a full e-commerce-style VariationBuilder. The new component has two parts: (1) a builder UI where users define up to 2 variation dimensions (e.g. "Colour", "Size") with auto-growing option inputs, and (2) a dynamically generated combination table showing every cartesian product row with per-variation SKU, Price, Stock, and image placeholder fields. Includes batch-apply functionality for mass-updating all rows.
+
+**Why:** The previous variation section was text-only (attribute name + comma-separated values) with no way to assign per-variant SKUs, prices, or stock. E-commerce sellers need a matrix view to manage individual variation data before listing products on platforms like Shopee/Lazada.
+
+### New Files
+
+| File | Purpose | Why |
+|------|---------|-----|
+| `frontend/src/pages/items/VariationBuilder.types.ts` | Shared interfaces: `VariationsData`, `VariationAttribute`, `VariationCombination`, `VariationBuilderProps` | Separated from component to avoid circular imports when `ItemFormPage` needs the type |
+| `frontend/src/pages/items/VariationBuilder.utils.ts` | Pure functions: `cartesianProduct()`, `syncCombinations()`, `migrateOldFormat()` | Testable utility logic independent of React |
+| `frontend/src/pages/items/VariationBuilder.tsx` | Main component with two internal sub-components: `VariationLevel` (builder UI) and `CombinationTable` (matrix table) | Page-specific component per ground rule #7 |
+
+### Files Modified
+
+| File | Change | Why |
+|------|--------|-----|
+| `frontend/src/pages/ItemFormPage.tsx` | Removed old `VariationRow` type, `useFieldArray`, `variationsToFormRows`/`formRowsToVariationsData` helpers, and inline variations JSX. Added `useState<VariationsData>`, integrated `<VariationBuilder>` component, updated `onSubmit` to pass JSONB directly. | Old flat-row approach incompatible with the new nested matrix; controlled component pattern is cleaner than fighting `useFieldArray` with deeply nested data |
+
+### JSONB Structure Change (backwards-compatible)
+
+Old format (attributes only):
+```json
+{ "attributes": [{ "name": "Color", "values": ["Red", "Blue"] }] }
+```
+
+New format (attributes + combinations):
+```json
+{
+  "attributes": [{ "name": "Color", "values": ["Red", "Blue"] }],
+  "combinations": [
+    { "values": ["Red"], "sku": "SKU-RED", "price": 29.99, "stock": 100, "image": null },
+    { "values": ["Blue"], "sku": "SKU-BLU", "price": 29.99, "stock": 50, "image": null }
+  ]
+}
+```
+
+`migrateOldFormat()` auto-generates `combinations` from old-format data on load.
+
+### Build
+
+- Production: 491.28 kB JS, 25.68 kB CSS (zero TypeScript errors)
+
+---
+
+## [PRE-ALPHA v0.5.6.1 | 2026-03-02 16:00] — Move Item Type Filter to Tabs Row
+
+**What changed:** Relocated the "Item Type" dropdown from the filter row (Search + Category + Brand + Item Type) to the tabs row (All | Live | Unpublished | Deleted). Item Type now sits on the far right of the tabs bar using `justify-between` flex layout, acting as a global workspace toggle rather than a minor search filter.
+
+**Why:** Item Type (Outgoing Product, Raw Material, Office Supply) is a high-level workspace context — it should be visually elevated above the search/filter row to signal it controls the entire item view, not just one search dimension. This also frees space in the filter row for the remaining 3 controls.
+
+### Files Modified
+
+| File | Change | Why |
+|------|--------|-----|
+| `frontend/src/pages/items/ItemFilters.tsx` | Removed `itemTypeId`/`onItemTypeChange` props, `itemTypes` state, `listItemTypes` import, and Item Type `<select>` | Item Type no longer belongs in the filter bar |
+| `frontend/src/pages/ItemsListPage.tsx` | Added `itemTypes` state + `listItemTypes` fetch; moved Item Type `<select>` into tabs row with `flex flex-wrap items-center justify-between`; removed `itemTypeId`/`onItemTypeChange` from `<ItemFilters>` props | Tabs row now shows tabs on the left + Item Type dropdown on the right, with `flex-wrap` for responsive wrapping |
+
+---
+
+## [PRE-ALPHA v0.5.6 | 2026-03-02] — Items Page Redesign (List + Form)
+
+**What changed:** Redesigned the Items list page and Create/Edit form to match reference design. Added tab-based status filtering, combined item column with image placeholder, checkbox selection, page-number pagination, and flattened the form from tabbed to single-card layout.
+
+**Why:** The previous Items module was functional but lacked the polished UX expected for a production-ready catalog management interface. The redesign improves discoverability (tab counts show item distribution), filtering (inline search + dropdowns), and data density (combined columns, expandable rows).
+
+### Backend Changes
+
+| File | Change | Why |
+|------|--------|-----|
+| `backend/app/routers/items.py` | Added `GET /items/counts` endpoint returning `{all, live, unpublished, deleted}` | Tab labels need real-time counts without 4 separate list calls |
+| `backend/app/routers/items.py` | Added `item_type_id` and `include_deleted` query params to `GET /items` | Enables Item Type filter dropdown and "Deleted" tab |
+| `backend/app/routers/items.py` | Changed base query: `include_deleted=True` shows ONLY soft-deleted items | Clean separation: non-deleted vs deleted-only (not mixed) |
+| `backend/app/routers/items.py` | Updated `_item_to_read` to pass `deleted_at` | Frontend needs `deleted_at` for "Deleted" status badge |
+| `backend/app/schemas/items.py` | Added `deleted_at: Optional[datetime] = None` to `ItemRead` | Exposes soft-delete timestamp to frontend |
+
+### Frontend Changes
+
+| File | Change | Why |
+|------|--------|-----|
+| `frontend/src/api/base/items.ts` | Added `item_type_id`, `include_deleted` to `ListItemsParams`; added `getItemCounts()` | Supports new filters and tab count badges |
+| `frontend/src/api/base_types/items.ts` | Added `deleted_at: string \| null` to `ItemRead` | Mirrors backend schema change |
+| `frontend/src/components/common/DataTable.tsx` | Added `selectable`, `selectedIds`, `onSelectChange`, `noCard` props; page-number pagination with ellipsis | Checkbox selection for bulk actions; embeddable in parent card; better pagination UX |
+| `frontend/src/pages/items/ItemFilters.tsx` | Moved from `components/items/`; added search input + Item Type dropdown; removed Active/Inactive filter | Follows page-specific component rule; tabs now handle status filtering |
+| `frontend/src/pages/ItemsListPage.tsx` | Full redesign: card wrapper, tab bar (All/Live/Unpublished/Deleted), inline filters, combined Items column (image+name+SKU), status badges, expand/collapse variations | Matches reference design with improved data density and filtering |
+| `frontend/src/pages/ItemFormPage.tsx` | Flattened tabs → single card; reordered fields (Name+SKU → Description → Category+Brand → UOM+Type+Status); inline variations section; orange Save button | Simpler form layout matching reference; all fields visible at once |
+
+### Build
+
+- Production: 489.60 kB JS, 24.55 kB CSS (zero TypeScript errors)
+
+---
+
+## [PRE-ALPHA v0.5.5.2 | 2026-03-02] — Remove product_number from Item Model
+
+**What changed:** Removed the `product_number` column from the Item model, database, schemas, API, frontend types, and reference loader.
+
+**Why:** The `product_number` field (Excel "No." column from item master upload) served no purpose in the WOMS system. It was a row counter from the Excel file, not a meaningful business attribute. Removing it simplifies the Item model.
+
+### Files changed
+
+| File | Change | Why |
+|------|--------|-----|
+| `backend/app/models/items.py` | Removed `product_number` field from `Item` class | Field not used by any business logic |
+| `backend/app/schemas/items.py` | Removed `product_number` from `ItemRead` | Aligns schema with model |
+| `backend/app/routers/items.py` | Removed `product_number` from `_item_to_read()` helper | Aligns router with schema |
+| `backend/app/services/reference_loader/loader.py` | Removed `product_number` parsing from `load_item_master()` | No longer stored in DB |
+| `frontend/src/api/base_types/items.ts` | Removed `product_number` from `ItemRead` interface | Mirrors backend schema |
+| `docs/official_documentation/database_structure.md` | Removed `product_number` from both ERD sections | Keeps DB docs in sync |
+| `docs/official_documentation/web-api.md` | Removed `product_number` from ItemRead schema table | Keeps API docs in sync |
+
+### Database
+
+- `ALTER TABLE items DROP COLUMN product_number` executed via `drop_product_number.py`
+
+---
+
+## [PRE-ALPHA v0.5.5.1 | 2026-03-02 HH:MM] — Database: Reset All Item Data
+
+**What changed:** Cleared all item-related tables in `woms_db` and reset auto-increment sequences to 1 so items can be re-imported fresh.
+
+**Why:** User requested a clean slate for item data — old data (499 items from previous master upload) needed to be removed before re-importing corrected item master data.
+
+### Tables cleared
+
+| Table | Rows removed | Sequence reset to |
+|-------|-------------|-------------------|
+| `items` | 499 | 1 |
+| `items_history` | 0 | 1 |
+| `status` | 5 | 1 |
+| `item_type` | 5 (re-seeded: 6) | 7 (after re-seed) |
+| `category` | 1 | 1 |
+| `brand` | 0 | 1 |
+| `base_uom` | 8 (re-seeded: 8) | 9 (after re-seed) |
+
+**Method:** `reset_items.py` script — DELETE in FK-safe order + `setval()` to reset sequences. `item_type` and `base_uom` re-seeded from `seed.py` since the application depends on them.
+
+**Note:** TRUNCATE RESTART IDENTITY was not possible because `woms_user` does not own the sequences; used DELETE + setval() as a workaround.
+
+---
+
+## [PRE-ALPHA v0.5.5 | 2026-03-02] — Items: Add is_active, Detach Status Table
+
+**What changed:** Replaced the `status_id` FK (linked to `status` lookup table) on the Item model with a direct `is_active: bool` field. Removed all Status CRUD endpoints from the items router. Updated frontend to use Active/Inactive badge and filter instead of a status dropdown. Status table kept in DB but no longer referenced by Items.
+
+### Backend
+
+| File | Change | Why |
+|------|--------|-----|
+| `backend/app/models/items.py` | Removed `status_id` FK, removed `status` relationship, added `is_active: bool` field. Removed `Status.items` back_populates. | Simplifies item model — active/inactive is sufficient vs. a 5-value lookup table |
+| `backend/app/schemas/items.py` | Removed `StatusRead`/`StatusCreate`/`StatusUpdate`. Replaced `status_id` with `is_active` in Item schemas. | Aligns schemas with new model |
+| `backend/app/routers/items.py` | Removed all Status CRUD endpoints (4 endpoints). Changed `status_id` filter → `is_active` filter. Removed `selectinload(Item.status)`. | Eliminates unused status management; simplifies queries |
+| `backend/app/models/seed.py` | Removed `_STATUSES` seed data and status INSERT block | Status table no longer seeded (table remains in DB) |
+
+### Frontend
+
+| File | Change | Why |
+|------|--------|-----|
+| `frontend/src/api/base_types/items.ts` | Replaced `status_id` → `is_active: boolean`. Removed `status` nested object. | Mirrors backend schema changes |
+| `frontend/src/api/base/items.ts` | Removed `normaliseStatus()`, `listStatuses()`, `createStatus()`, `updateStatus()`, `deleteStatus()`. Changed `status_id` → `is_active` in params. | Removes unused status API functions |
+| `frontend/src/components/items/ItemFilters.tsx` | Replaced status dropdown with All/Active/Inactive select | Simpler UX with boolean filter |
+| `frontend/src/pages/ItemsListPage.tsx` | Updated filter state, column display (green Active / gray Inactive badge) | Visual clarity for item status |
+| `frontend/src/pages/ItemFormPage.tsx` | Replaced status select with Active checkbox | Simple toggle instead of dropdown |
+
+### Documentation
+
+| File | Change |
+|------|--------|
+| `docs/official_documentation/web-api.md` | Removed Status endpoints, updated Items schemas to use `is_active` |
+| `docs/official_documentation/database_structure.md` | Removed `status` entity from overview + module ER diagrams, removed `status ||--o{ items` relationship, removed `Table: status` section, replaced `status_id` with `is_active` in items table definition, updated `items_history` and `audit_log` JSONB examples, added `idx_items_is_active` B-tree index, updated table counts (47→46, Items 7→6) |
+
+---
+
+## [PRE-ALPHA v0.5.4 | 2026-03-02] — Items Module (Master Catalog)
+
+**What changed:** Implemented the Items module frontend — a paginated, searchable, filterable master item catalog with full CRUD, variation support, and a multi-tab creation/edit form powered by `react-hook-form`. Added a reusable `DataTable` component. Activated the warehouse backend router (prep for future). Added Catalog sidebar navigation group.
+
+### Dependencies Added
+- `react-hook-form` — multi-tab form with dynamic field arrays for item variations
+
+### Backend
+
+| File | Change | Why |
+|------|--------|-----|
+| `backend/app/main.py` | Uncommented warehouse router registration | Activates 8 warehouse endpoints at `/api/v1/warehouse/` for future use |
+
+### Frontend — New Files
+
+| File | Purpose |
+|------|---------|
+| `frontend/src/api/base_types/items.ts` | Extended with `ItemRead`, `ItemCreate`, `ItemUpdate`, `PaginatedResponse<T>` types |
+| `frontend/src/api/base/items.ts` | Extended with 5 item CRUD functions: `listItems`, `getItem`, `createItem`, `updateItem`, `deleteItem` |
+| `frontend/src/components/common/DataTable.tsx` | Reusable paginated table: server-side pagination, search, row expansion, loading/error/empty states |
+| `frontend/src/components/items/ItemFilters.tsx` | Filter bar with Status, Category, Brand dropdowns + clear button |
+| `frontend/src/pages/ItemsListPage.tsx` | Master catalog page: DataTable + filters + search + row expansion for variations + edit/delete actions |
+| `frontend/src/pages/ItemFormPage.tsx` | Create/Edit form: Tab 1 (Basic Info with 9 fields) + Tab 2 (Variations with dynamic field array + SKU preview grid) |
+
+### Frontend — Modified Files
+
+| File | Change | Why |
+|------|--------|-----|
+| `frontend/src/App.tsx` | Added 3 routes: `/catalog/items`, `/catalog/items/new`, `/catalog/items/:id/edit` | Catalog routing |
+| `frontend/src/components/layout/MainLayout.tsx` | Added Catalog `SubMenu` with Items link; split NAV_ITEMS into NAV_TOP + NAV_BOTTOM | Sidebar navigation for new module |
+
+### Build Result
+- TypeScript: zero errors
+- Production build: 488.06 kB JS, 24.11 kB CSS
+
+---
+
+## [PRE-ALPHA v0.5.3.2 | 2026-03-02 ~00:00] — Items & Warehouse Plan Review and Corrections
+
+**What changed:** Reviewed `docs/planning_phase/Frontend/02_items_warehouse_modules.plan.md` against the actual backend code (models, schemas, routers) and corrected 9 errors that would have caused implementation failures.
+
+### File Changed
+
+| File | Change | Why |
+|------|--------|-----|
+| `docs/planning_phase/Frontend/02_items_warehouse_modules.plan.md` | Corrected 9 errors + restructured document | Plan had mismatches with actual backend that would block or break frontend implementation |
+
+### Errors Corrected
+
+| # | Error | Fix |
+|---|-------|-----|
+| 1 | Search field listed as `sku_name` | Backend searches `item_name` or `master_sku` — corrected |
+| 2 | Item update listed as `PUT` | Backend uses `PATCH /api/v1/items/{item_id}` — corrected |
+| 3 | Warehouse API paths used flat `/api/v1/inventory/...` | Backend nests under `/api/v1/warehouse/{warehouse_id}/...` — corrected all hooks |
+| 4 | Location hierarchy listed "Warehouse → Zone → Aisle → Rack → Bin" | Backend model uses `section` → `zone` → `aisle` → `rack` → `bin` — corrected |
+| 5 | `/catalog/attributes` route planned for attribute CRUD | Already implemented at `/settings` (v0.5.3) — removed duplicate route |
+| 6 | Backend API Dependencies marked all as "To implement" | Items CRUD + all 5 attribute GETs are already implemented — updated statuses |
+| 7 | Movement payload assumed `source_location_id` + `destination_location_id` | Backend uses separate `InventoryTransaction` records with `is_inbound` flag — corrected |
+| 8 | Warehouse router activation not mentioned | Router exists but is commented out in `main.py` — added prerequisite note |
+| 9 | No edit route for existing items | Added `/catalog/items/:id/edit` route |
+
+---
+
 ## [PRE-ALPHA v0.5.3.1 | 2026-02-28 ~00:00] — Database Documentation Cleanup
 
 ### Files Changed
