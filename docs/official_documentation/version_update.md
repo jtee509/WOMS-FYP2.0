@@ -7,6 +7,894 @@ Version scheme: `PRE-ALPHA vX.Y.Z`
 
 ---
 
+## [PRE-ALPHA v0.6.0-PLAN | 2026-03-11 17:00] — Inventory System Enhancement Planning Document
+
+**WHY:** The current inventory system has basic movement recording (single-item modal) and flat history tables. This planning document outlines a 3-phase enhancement to transform it into a full lifecycle management platform with multi-item movements, approval workflows, and analytics.
+
+**Files changed:**
+- `docs/planning_phase/Frontend/07_inventory_system_enhancement_plan.plan.md` — NEW: comprehensive planning document covering Phase 1 (multi-item drawer with useFieldArray), Phase 2 (movement lifecycle status + expandable rows + action menus), Phase 3 (intelligent stock levels + analytics dashboard). Includes component architecture, backend schema changes, migration strategy, risk assessment, and implementation order.
+
+**Key decisions documented:**
+- Drawer over modal for movement entry (users can reference background table)
+- Movement lifecycle: Pending → In-Transit → Completed (with Cancel from any pre-complete state)
+- Stock changes tied to lifecycle transitions (not on creation)
+- Analytics uses d3 (already installed) over recharts
+- zod + @hookform/resolvers needed for cross-row validation
+- Default existing movements to `completed` status in migration
+
+---
+
+## [PRE-ALPHA v0.5.54 | 2026-03-11 16:00] — Bundle Mass Upload (backend + frontend)
+
+**WHY:** Users need to create bundles in bulk from CSV/Excel files. Each row represents one component of a bundle; rows sharing the same `bundle_sku` are grouped into a single bundle. The backend validates component SKU existence, FK resolution, and bundle composition rules before creating bundles with their PlatformSKU listings and ListingComponent records.
+
+**Files changed:**
+- `backend/app/services/items_import/bundle_importer.py` — NEW: parses CSV/Excel, groups rows by `bundle_sku`, resolves FKs (category/brand/uom), validates component SKUs against existing items, enforces bundle composition rules (>1 items or qty > 1), creates Item + PlatformSKU + ListingComponent records per bundle
+- `backend/app/routers/items.py` — UPDATED: added `POST /items/bundles/import` endpoint (file upload, max 10 MB, returns ImportResult)
+- `frontend/src/api/base/items.ts` — UPDATED: added `importBundles()` API function
+- `frontend/src/pages/items/BundlesMassUploadPage.tsx` — NEW: full upload page with CSV template download, drag-drop file picker, SheetJS preview, result display with per-row errors
+- `frontend/src/pages/items/CatalogUploadPage.tsx` — UPDATED: Bundles tab now renders BundlesMassUploadPage (was placeholder)
+
+**CSV format:** `bundle_name, bundle_sku, component_sku, component_qty, [sku_name, description, category, brand, uom, is_active]`
+
+---
+
+## [PRE-ALPHA v0.5.53 | 2026-03-11 15:00] — Tabbed Create & Upload pages (Item / Bundle tabs)
+
+**WHY:** Instead of separate pages for creating items vs bundles, and separate upload pages, users now get a single "Create New" page and a single "Mass Upload" page — each with Item/Bundle tabs. This reduces nav clutter and keeps creation flows unified.
+
+**Files changed:**
+- `frontend/src/pages/items/CatalogCreatePage.tsx` — NEW: wrapper page with Item/Bundle segmented tabs; renders ItemFormPage or BundleFormPage based on selected tab; supports `?type=bundle` query param for deep-linking
+- `frontend/src/pages/items/CatalogUploadPage.tsx` — NEW: wrapper page with Items/Bundles segmented tabs; renders ItemsMassUploadPage or "coming soon" placeholder for bundle upload
+- `frontend/src/pages/items/ItemFormPage.tsx` — UPDATED: added `hideHeader` prop to conditionally hide page chrome when embedded in wrapper
+- `frontend/src/pages/bundles/BundleFormPage.tsx` — UPDATED: added `hideHeader` prop; back button now navigates to `/catalog/items` instead of `/catalog/bundles`
+- `frontend/src/pages/items/ItemsMassUploadPage.tsx` — UPDATED: added `hideHeader` prop
+- `frontend/src/pages/items/ItemsListPage.tsx` — UPDATED: "Create Bundle" dropdown option now navigates to `/catalog/items/new?type=bundle`
+- `frontend/src/App.tsx` — UPDATED: `/catalog/items/new` renders CatalogCreatePage; `/catalog/items/upload` renders CatalogUploadPage; `/catalog/bundles/new` redirects to `/catalog/items/new`
+- `frontend/src/components/layout/nav.config.tsx` — UPDATED: "Create New Item" renamed to "Create New"; isActive covers `/catalog/bundles/new`
+
+---
+
+## [PRE-ALPHA v0.5.52 | 2026-03-11 14:00] — Unified "My Items" page (Items + Bundles merged)
+
+**WHY:** Streamline navigation and reduce context-switching by merging the separate Items and Bundles list pages into a single unified "My Items" page. Users can now manage all catalog items — regular items and bundles — from one place with primary tabs (All/Items/Bundles), secondary status tabs (All/Live/Unpublished/Deleted), a dropdown "Add New" button, visual Bundle badges, and expandable rows for both variations and bundle components.
+
+**Files changed:**
+- `frontend/src/pages/items/ItemsListPage.tsx` — REWRITTEN: unified page with dual-tab system (primary: All/Items/Bundles; secondary: All/Live/Unpublished/Deleted), dropdown Add New (Create Item / Create Bundle), Bundle badge in Item Type column, expandable rows for bundle components and item variations, smart API dispatch (listItems vs listBundles), combined status counts
+- `frontend/src/components/layout/nav.config.tsx` — UPDATED: removed separate "Bundles" and "Create Bundle" nav entries under Catalog; renamed "Items" to "My Items"; extended isActive to cover `/catalog/bundles` paths; removed unused LayersIcon import
+- `frontend/src/App.tsx` — UPDATED: `/catalog/bundles` route now redirects to `/catalog/items` (unified page); removed BundlesListPage import; added Navigate import; bundle create/edit routes preserved
+
+---
+
+## [PRE-ALPHA v0.5.51 | 2026-03-09 22:00] — Add is_online boolean to Platform table
+
+**WHY:** Differentiate between online marketplaces (Shopee, Lazada, TikTok) and offline/physical stores within the same platform table. Defaults to `true` since all existing platforms are online.
+
+**Files changed:**
+- `backend/app/models/orders.py` — UPDATED: added `is_online: bool` field to `Platform` model (default `True`)
+- `backend/app/schemas/platform.py` — UPDATED: added `is_online` to `PlatformCreate`, `PlatformUpdate`, and `PlatformRead` schemas
+- `backend/app/routers/platforms.py` — UPDATED: all `PlatformRead` constructions include `is_online`; `GET /platforms` accepts `is_online` query filter
+- `backend/alembic/versions/20260309_1000_00_g2h3i4j5k6l7_add_is_online_to_platform.py` — NEW: Alembic migration adds `is_online` column with `server_default=TRUE`
+- `docs/official_documentation/database_structure.md` — UPDATED: platform table schema + ER diagrams
+
+---
+
+## [PRE-ALPHA v0.5.50-PLAN | 2026-03-09 21:30] — Bundle v2 Planning Document
+
+**WHY:** The current bundle implementation is coupled to PlatformSKU/listing_component, requiring platform_id and seller_id to create a bundle. Bundles are a catalog/warehouse concept and should be platform-independent. This planning doc outlines the decoupled architecture.
+
+**Files changed:**
+- `docs/planning_phase/Backend/08_bundle_v2_plan.plan.md` — NEW: comprehensive planning document covering schema (new `bundle_components` table), 7 revised API endpoints, frontend type updates, items/bundles page separation rules, 4-phase implementation plan. Supersedes `07_bundle_sku_inventory_plan.plan.md`.
+
+**Key decisions documented:**
+- New `bundle_components` table replaces PlatformSKU+ListingComponent coupling
+- Bundle validity: must have >1 distinct components OR any component with qty > 1
+- Items page excludes Bundle-type items; Bundles page shows only valid bundles
+- No nested bundles, pricing, or ATP in this iteration
+
+---
+
+## [PRE-ALPHA v0.5.46 | 2026-03-09 18:00] — My Bundles Dashboard + Bundle API Endpoints
+
+**Files changed:**
+- `backend/app/schemas/items.py` — UPDATED: added `BundleListItem` schema (extends ItemRead with `component_count`, `total_quantity`)
+- `backend/app/routers/items.py` — UPDATED: added 3 new endpoints: `GET /items/bundles` (paginated list with component counts), `GET /items/bundles/counts` (tab counts), `GET /items/bundles/{item_id}` (single bundle with full components)
+- `frontend/src/api/base_types/items.ts` — UPDATED: added `BundleListItem` interface
+- `frontend/src/api/base/items.ts` — UPDATED: added `listBundles()`, `getBundleCounts()`, `getBundle()` API functions + `ListBundlesParams` interface
+- `frontend/src/pages/bundles/BundlesListPage.tsx` — NEW: full bundles dashboard mirroring ItemsListPage (tabs, filters, DataTable, component counts, expand-to-view components, soft-delete/restore, status toggle)
+- `frontend/src/pages/bundles/BundleFilters.tsx` — NEW: filter bar (search, category, brand) for bundles list
+- `frontend/src/pages/bundles/BundleFormPage.tsx` — UPDATED: replaced `updateBundle(id, {})` workaround with proper `getBundle(id)` for edit-mode data loading
+- `frontend/src/App.tsx` — UPDATED: `/catalog/bundles` route now renders `BundlesListPage` instead of `PlaceholderPage`
+
+**What was done:**
+1. **Backend — 3 new bundle read endpoints:**
+   - `GET /items/bundles` — paginated list of Bundle-type items with `component_count` and `total_quantity` computed via LEFT JOIN on listing_component/platform_sku; supports search, is_active, category, brand, include_deleted filters
+   - `GET /items/bundles/counts` — tab badge counts (all/live/unpublished/deleted) scoped to Bundle type
+   - `GET /items/bundles/{item_id}` — single bundle with full `BundleReadResponse` (item + components); replaces the PATCH-with-empty-body workaround
+2. **Frontend — BundlesListPage:** Card with header ("My Bundles" + "+ Create New Bundle"), 4 tabs with counts, BundleFilters (search + category + brand), DataTable with columns: Bundle (thumbnail + name + SKU + expand chevron), Components (badge: "3 Items" + total qty), Category, Status (toggle switch), Brand, Actions (edit/delete/restore); row expand fetches and displays component breakdown table
+3. **Frontend — BundleFilters:** Reusable filter bar identical to ItemFilters with bundle-specific search placeholder
+4. **BundleFormPage fix:** Edit mode now uses `GET /items/bundles/{id}` instead of `PATCH /items/bundles/{id}` with empty body
+
+**WHY:** Completes the bundles management UI — users can now list, search, filter, toggle status, soft-delete, restore, and inspect bundle components from a dedicated dashboard that mirrors the established Items page UX.
+
+---
+
+## [PRE-ALPHA v0.5.45 | 2026-03-09 16:30] — Bundle Soft Delete & History Logging
+
+**Files changed:**
+- `backend/app/models/triggers.py` — UPDATED: added trigger #11 `insert_items_history_on_update()` + `trg_items_history_on_update` (AFTER UPDATE on items); detects UPDATE / SOFT_DELETE / RESTORE operations, captures old+new state in JSONB snapshot_data with `previous_values`; uses `app.current_user_id` session variable for user tracking
+- `backend/app/routers/items.py` — UPDATED: added `DELETE /bundles/{item_id}` (soft-delete bundle + deactivate PlatformSKU listing) and `POST /bundles/{item_id}/restore` (restore + re-activate listing); added `SET LOCAL app.current_user_id` before all item update/delete/restore flushes so the trigger records the authenticated user
+- `frontend/src/api/base/items.ts` — UPDATED: added `deleteBundle()` and `restoreBundle()` API functions
+- `docs/official_documentation/web-api.md` — UPDATED: documented DELETE /bundles/{item_id} and POST /bundles/{item_id}/restore endpoints
+- `docs/official_documentation/database_structure.md` — UPDATED: documented trigger #11 and function `insert_items_history_on_update()`
+
+**What was done:**
+1. **Soft Delete:** `DELETE /items/bundles/{item_id}` sets `deleted_at`/`deleted_by` on the items row and deactivates the PlatformSKU listing; listing_component rows are preserved for restore
+2. **Restore:** `POST /items/bundles/{item_id}/restore` clears soft-delete fields and re-activates the PlatformSKU listing; returns full BundleReadResponse
+3. **History on UPDATE:** PostgreSQL trigger `trg_items_history_on_update` fires AFTER UPDATE on items, auto-detects operation type (UPDATE/SOFT_DELETE/RESTORE), captures full before/after snapshot in JSONB
+4. **User attribution:** All item mutation endpoints now set `SET LOCAL app.current_user_id` before flush so the trigger can record `changed_by_user_id` even for non-delete operations
+
+**WHY:** Maintains data integrity by never hard-deleting bundle data — soft-delete preserves recoverability. History trigger provides a complete audit trail for every item mutation (create, update, soft-delete, restore), storing the full before/after state in JSONB for compliance and debugging.
+
+---
+
+## [PRE-ALPHA v0.5.44 | 2026-03-09 15:00] — Bundle Form Page (Create / Edit)
+
+**Files changed:**
+- `frontend/src/pages/bundles/BundleFormPage.tsx` — NEW: main bundle form (create + edit)
+- `frontend/src/pages/bundles/ComponentSearch.tsx` — NEW: searchable item picker dropdown
+- `frontend/src/pages/bundles/ComponentList.tsx` — NEW: dynamic component table with quantity steppers
+- `frontend/src/api/base_types/items.ts` — UPDATED: added 5 bundle TypeScript interfaces
+- `frontend/src/api/base/items.ts` — UPDATED: added `createBundle()` and `updateBundle()` functions
+- `frontend/src/App.tsx` — UPDATED: added `/catalog/bundles/new` and `/catalog/bundles/:id/edit` routes
+- `frontend/src/components/layout/nav.config.tsx` — UPDATED: added "Create Bundle" nav entry
+- `docs/official_documentation/frontend-development-progress.md` — UPDATED: documented all changes
+
+**What was done:**
+1. **BundleFormPage**: Full create/edit form with react-hook-form, dropdown options, image upload, platform/seller (create-only), bundle composition validation
+2. **ComponentSearch**: Debounced search against `/items` API, excludes Bundle-type items and already-added items, thumbnail + name + SKU results
+3. **ComponentList**: Inline quantity stepper, delete per row, summary bar
+4. **API layer**: `createBundle()` → `POST /items/bundles`, `updateBundle()` → `PATCH /items/bundles/{id}`
+5. **Routes**: `/catalog/bundles/new` and `/catalog/bundles/:id/edit` registered in App.tsx
+
+**WHY:** Provides the full frontend UI for the bundle creation/editing workflow, integrating with the backend endpoints from v0.5.42-v0.5.43.
+
+---
+
+## [PRE-ALPHA v0.5.43 | 2026-03-09 14:00] — Bundle Update Endpoint
+
+**Files changed:**
+- `backend/app/routers/items.py` — ADDED: `PATCH /items/bundles/{item_id}` endpoint; imported `delete` from sqlalchemy and `BundleUpdateRequest` from schemas
+- `backend/app/schemas/items.py` — ADDED: `BundleUpdateRequest` schema (all fields optional, components triggers delete-and-reinsert)
+- `docs/official_documentation/web-api.md` — UPDATED: added PATCH endpoint to table + full documentation with data integrity notes
+
+**What was done:**
+1. **`PATCH /api/v1/items/bundles/{item_id}`**: Update bundle metadata and/or replace components in a single transaction
+2. **SKU change safety**: changing `master_sku` only updates the bundle's item row + syncs `platform_sku.platform_sku`; component item SKUs are never modified
+3. **Delete-and-reinsert strategy**: when `components` is provided, all existing `listing_component` rows for this listing are deleted then new rows inserted — guarantees final state matches exactly what the client sent
+4. **Field sync**: `item_name` → `platform_seller_sku_name`, `is_active` → `platform_sku.is_active` — kept in sync automatically
+5. **Validation**: verifies item is Bundle type, new SKU uniqueness, component existence, bundle composition rules
+
+**WHY:** Enables modification of existing bundles (SKU rename, component add/remove/reorder) while preserving data integrity — component item records are never altered by bundle-level changes.
+
+---
+
+## [PRE-ALPHA v0.5.42 | 2026-03-09 13:00] — Bundle Creation Endpoint
+
+**Files changed:**
+- `backend/app/routers/items.py` — ADDED: `POST /items/bundles` endpoint; imports for `ListingComponent`, `PlatformSKU`, bundle schemas
+- `backend/app/schemas/items.py` — ADDED: `BundleComponentInput`, `BundleCreateRequest`, `BundleComponentRead`, `BundleReadResponse` schemas
+- `docs/official_documentation/web-api.md` — UPDATED: added `POST /items/bundles` to endpoint table + full endpoint documentation; removed stale bundle BOM endpoints from v0.5.17 (dropped in v0.5.27)
+
+**What was done:**
+1. **`POST /api/v1/items/bundles`**: Atomic endpoint that creates a bundle item + listing components in a single transaction
+2. **Transaction flow**: (a) validate master_sku uniqueness, (b) validate bundle composition (>1 items or qty>1), (c) verify all component item_ids exist, (d) resolve "Bundle" item_type_id, (e) insert into `items`, (f) create `platform_sku` listing, (g) insert components into `listing_component`
+3. **Audit trail**: The `trg_items_history_on_insert` trigger (from v0.5.41) fires automatically on the items INSERT — no explicit audit code needed
+4. **Validation**: 409 on duplicate SKU, 422 on invalid composition or missing component items, 500 if Bundle type not seeded
+
+**WHY:** Provides a single atomic API call to create bundles with full validation, leveraging the existing `listing_component` table architecture and the v_bundles view for subsequent queries.
+
+---
+
+## [PRE-ALPHA v0.5.41 | 2026-03-09 12:00] — Bundle Detection View + Items Audit Trail Trigger
+
+**Files changed:**
+- `backend/app/models/views.py` — ADDED: `v_bundles` view (view #13) identifying bundle listings from `listing_component` using multi-item or qty>1 criteria
+- `backend/app/models/triggers.py` — ADDED: `insert_items_history_on_create()` trigger function + `trg_items_history_on_insert` trigger (AFTER INSERT on items) for automatic audit trail
+- `backend/app/models/seed.py` — ADDED: "Bundle" to `_ITEM_TYPES` seed data (7th item_type)
+- `backend/app/migrations/006_bundles_view_and_audit.sql` — ADDED: SQL reference script (not executed at runtime; Python modules are canonical)
+- `docs/official_documentation/database_structure.md` — UPDATED: added v_bundles view docs, trg_items_history_on_insert trigger docs, "Bundle" in item_type seed
+
+**What was done:**
+1. **v_bundles view**: CTE-based view that identifies bundles from `listing_component` — a listing qualifies as a bundle if it has >1 unique `item_id` OR a single `item_id` with `quantity > 1`; joins to `platform_sku`, `platform`, `seller` for full context
+2. **Audit trail trigger**: `trg_items_history_on_insert` fires AFTER INSERT on `items` and auto-creates an `items_history` record with `operation = 'INSERT'` and a JSONB snapshot of all key fields
+3. **"Bundle" item_type**: Added to seed data so items can be classified as bundles via `item_type_id`
+4. **master_sku constraint**: Verified existing UNIQUE NOT NULL constraint on `items.master_sku` (no change needed — already enforced at model level)
+
+**WHY:** Prepares the database layer to formally distinguish individual items from bundles, provides automatic audit trail for all new item creations, and adds the "Bundle" classification to the type system.
+
+---
+
+## [PRE-ALPHA v0.5.40.1 | 2026-03-07 13:00] — Warehouse Settings Tab Visual Redesign
+
+**Files changed:**
+- `frontend/src/pages/settings/WarehouseSettingsTab.tsx` — REDESIGNED: two sub-tabs ("warehouse list" / "location setup"); iOS-style teal toggle for status; pill "Manage" button per row; filter as underline tabs; Batch Upload toolbar; Country column; proper pagination
+
+**What was done:**
+1. **Sub-tabs**: "warehouse list" | "location setup" with black-underline active style
+2. **Status column**: iOS-style toggle switch (accent-teal when active)
+3. **Manage column**: Pill button ("▶ Manage") switches to Location Setup sub-tab scoped to that warehouse; kebab (⋮) for Edit/Duplicate/Delete
+4. **Filter**: "All / Active / Inactive" rendered as underline-tab pills
+5. **Toolbar**: "Batch Upload" (grey outline) + "+ Add Warehouse" (secondary orange)
+6. **Country field**: Added to form and address columns
+7. **Pagination**: 20 items/page with proper page state
+
+**WHY:** Redesigned to match reference screenshot showing sub-tab navigation, toggle switches, pill Manage buttons, and tab-style filters.
+
+---
+
+## [PRE-ALPHA v0.5.40 | 2026-03-07 12:00] — Warehouse Overview & Location Management in Settings
+
+**Files changed:**
+- `frontend/src/pages/settings/WarehouseSettingsTab.tsx` — NEW: embedded warehouse table with full CRUD (add/edit/toggle/duplicate/soft-delete), expandable location management panel per warehouse
+- `frontend/src/pages/settings/warehouse_locations/BulkCreationWizard.tsx` — NEW: pattern-based location generator (prefix + numeric range or explicit values, Cartesian product preview)
+- `frontend/src/pages/settings/warehouse_locations/CsvLocationImport.tsx` — NEW: CSV/Excel import (template download, SheetJS parse, client-side validation, duplicate detection, row-by-row batch create with progress bar)
+- `frontend/src/pages/settings/warehouse_locations/LocationTree.tsx` — NEW: hierarchical tree rendering (Section → Zone → Aisle → Rack → Bin) with expand/collapse, hover edit/delete actions
+- `frontend/src/pages/settings/warehouse_locations/PreviewTable.tsx` — NEW: preview table for generated locations (first 100 shown)
+- `frontend/src/pages/settings/warehouse_locations/EditNodeModal.tsx` — NEW: rename modal for individual tree nodes
+- `frontend/src/pages/settings/warehouse_locations/LocationManagementPage.css` — NEW: CSS for tree/content panel layout
+- `frontend/src/pages/settings/LocationManagementSection.tsx` — UPDATED: added `overrideWarehouseId`/`overrideWarehouseName` props (bypasses global context for embedded use); added "Pattern Generator | CSV/Excel Import" tab switcher in right panel
+- `frontend/src/pages/settings/SettingsPage.tsx` — UPDATED: Warehouse tab now renders `<WarehouseSettingsTab />` instead of placeholder
+- `frontend/src/api/base_types/warehouse.ts` — UPDATED: added `is_active` and `sort_order` to `InventoryLocationCreate` and `InventoryLocationUpdate`
+
+**What was done:**
+1. **Warehouse Overview Table** — compact table listing all warehouses (Name, ID, Primary Location, Locations count, Status). Columns: Add Warehouse button, filter by status, search. Each row has a "Manage" toggle that expands an inline location panel.
+2. **Full warehouse CRUD** — Add/Edit modal, status toggle, duplicate (deep clone), soft delete — all carried over from WarehouseListPage into the settings-embedded tab.
+3. **Hierarchical Location Tree** — `LocationTree` renders Section → Zone → Aisle → Rack → Bin with auto-expand (first 2 levels), type badges, location count pills, and hover edit/delete actions per node.
+4. **Pattern Generator tab** — `BulkCreationWizard` lets users enable any hierarchy level, set a prefix + numeric range (with zero-padding) or explicit CSV values, preview the full Cartesian product, then submit to `POST /bulk-generate`.
+5. **CSV/Excel Import tab** — `CsvLocationImport` supports drag-drop or click-to-browse, parses .csv/.xlsx/.xls via SheetJS, validates each row (empty location, field length, in-file duplicates), shows a preview table with invalid rows highlighted, imports valid rows row-by-row with a live progress bar.
+6. **Type safety** — `InventoryLocationCreate/Update` now includes `is_active` and `sort_order` to match backend schema.
+
+**WHY:** The Settings Warehouse tab was a placeholder. This implements the full warehouse management UX as specified: warehouse table with CRUD, location tree, bulk generator, and file import — all in one cohesive settings panel without requiring navigation to separate pages.
+
+---
+
+## [PRE-ALPHA v0.5.39 | 2026-03-07 00:00] — Warehouse Settings Grid Refactor
+
+**Files changed:**
+- `frontend/src/pages/settings/WarehouseCard.tsx` — REFACTORED: responsive grid, always-visible CTA card, create form above grid, empty state, StatusBadge extracted, CreateWarehouseCard extracted
+
+**What was done:**
+1. **Responsive Grid:** Changed breakpoints from `sm:cols-2 lg:cols-3 xl:cols-4` to `cols-1 | md:cols-2 | lg:cols-4` as specified.
+2. **Primary Action Card (slot 0):** `CreateWarehouseCard` is now always rendered as the first grid item — never replaced by the form. When `creating` is active the card shows a rotated icon and "Cancel" label (toggle behaviour). Clicking again closes the form.
+3. **Create Form above grid:** `WarehouseFormPanel` now renders outside and above the grid so the CTA card stays in position 0 at all times.
+4. **Warehouse Card layout:** Name field changed to `font-bold`. StatusBadge extracted as its own component. Action bar retained: Edit button (left) + `StandardActionMenu` kebab (right, exposes Deactivate/Activate + Delete only).
+5. **Empty State:** Dedicated `EmptyState` component renders below the grid when `warehouses.length === 0` — shows inbox icon + instructional copy.
+6. **useCallback on openCreate:** prevents unnecessary re-renders on the toggle handler.
+
+**WHY:** The previous layout hid the CTA card while the form was open, violated the "always first" grid contract, used incorrect breakpoints (sm/xl), and had no dedicated empty state. This refactor aligns the component with the design specification.
+
+---
+
+## [PRE-ALPHA v0.5.38 | 2026-03-06 23:00] — Inventory Guard & Recursive Soft-Delete
+
+**Files changed:**
+- `backend/app/services/inventory_guard.py` — ENHANCED: added `get_location_children_ids()` for recursive child lookup; added `soft_delete_location()` service that cascades soft-delete to all children + runs inventory guard against full subtree; added `_get_location_level()` helper
+- `backend/app/routers/warehouse.py` — `DELETE /locations/{id}` now uses recursive `soft_delete_location()` service (cascades to children); `PATCH /locations/{id}` adds inventory guard when `is_active=false`; `PATCH /{id}/toggle-status` adds inventory guard when toggling to inactive; all inventory guard errors changed from `409 Conflict` to `400 Bad Request` with message `"Cannot delete: Location contains active stock."`
+- `backend/app/services/location_tree.py` — orphan management: locations with `section=NULL` grouped under virtual "Unassigned" node (`type: "unassigned"`, `is_virtual: true`, `is_orphan: true`) at end of warehouse children; normal sections counted separately in summary
+
+**What was done:**
+1. **Recursive Soft-Delete:** `soft_delete_location(location_id)` determines hierarchy level of target location, finds all children sharing the same prefix (Section→Zone→Aisle→Rack→Bin), checks inventory guard against the FULL subtree, then bulk soft-deletes all in one UPDATE
+2. **Inventory Guard (enhanced):** Before any DELETE or PATCH (is_active=false), the guard queries InventoryLevel for ALL affected locations (including recursive children). If any SKU count > 0, returns HTTP 400 with "Cannot delete: Location contains active stock." — now protects 6 endpoints total
+3. **Orphan Management:** GET `/locations/hierarchy` groups locations with section=NULL under a virtual "Unassigned" node at the end of the warehouse's children. This node has `type: "unassigned"`, `is_virtual: true` for distinct frontend rendering
+
+**WHY:** Prevents data integrity issues — deleting a parent node (e.g. Section) previously left orphaned child locations. The inventory guard now covers all destructive operations. Orphan management gives the frontend a clean contract for rendering unassigned locations.
+
+---
+
+## [PRE-ALPHA v0.5.37 | 2026-03-06 XX:XX] — Warehouse Management Enhancements — 5 features
+
+**Files changed:**
+- `backend/app/services/inventory_guard.py` — NEW: stock guard service (check_stock_at_locations, get_warehouse_location_ids, get_subtree_location_ids)
+- `backend/app/routers/warehouse.py` — guard checks on 4 delete/deactivate endpoints; rename-level endpoint; location_count in list/get warehouses
+- `backend/app/schemas/warehouse.py` — RenameLevelRequest/Response schemas; location_count on WarehouseRead
+- `backend/app/services/location_tree.py` — orphan management: "(unnamed)" → "Unassigned", is_orphan flag
+- `frontend/src/api/base_types/warehouse.ts` — is_orphan, location_count, RenameLevelRequest/Response types
+- `frontend/src/api/base/warehouse.ts` — renameLevel() API function
+- `frontend/src/pages/settings/warehouse_locations/EditNodeModal.tsx` — NEW: rename hierarchy node modal
+- `frontend/src/pages/settings/warehouse_locations/LocationTree.tsx` — orphan styling (italic + warning), edit pencil icon
+- `frontend/src/pages/settings/LocationManagementSection.tsx` — edit modal state wiring
+
+**What was done:**
+1. Inventory Guard: DELETE/PATCH warehouse and location endpoints now check InventoryLevel for stock (qty_available > 0 OR reserved_qty > 0) and return 409 if stock exists
+2. Hierarchical Soft Delete: Already implemented — documented cascade behavior
+3. Orphan Management: Locations with missing hierarchy levels show as "Unassigned" with italic/warning styling and is_orphan flag
+4. Edit Modal: Bulk rename hierarchy nodes via PATCH /{warehouse_id}/locations/rename-level; frontend EditNodeModal with pencil icon in tree
+5. Multi-Warehouse Location Count: WarehouseRead now includes location_count via LEFT JOIN subquery
+
+**WHY:** Prevents accidental deletion of stocked locations, provides CRUD for hierarchy nodes, and improves UX for orphaned/unassigned locations.
+
+---
+
+## [PRE-ALPHA v0.5.36 | 2026-03-06 18:00] — Standardize all delete operations to soft-delete
+
+**What changed:** Converted all hard-delete endpoints (ItemType, Category, Brand, BaseUOM) to soft-delete by adding `deleted_at` columns with partial indexes. Added restore endpoints for all soft-deletable entities: reference data (4 endpoints), Warehouse (with cascade restore), and InventoryLocation. Fixed `commit()`→`flush()` inconsistency in `soft_delete_warehouse()`.
+
+**Why:** The project ground rule mandates "soft delete only" — data must never be permanently removed from the database. Previously, the four reference lookup tables used hard-delete (`session.delete()`), which permanently destroyed rows. This change ensures all delete operations are recoverable via restore endpoints, and the delete/restore pattern is consistent across all domains.
+
+### Backend Changes
+
+| File | Action | Notes |
+|------|--------|-------|
+| `backend/app/models/items.py` | Modified | Added `deleted_at: Optional[datetime]` + partial index to ItemType, Category, Brand, BaseUOM |
+| `backend/app/schemas/items.py` | Modified | Added `deleted_at: Optional[datetime]` to ItemTypeRead, CategoryRead, BrandRead, BaseUOMRead |
+| `backend/app/routers/items.py` | Modified | Converted 4 hard-delete endpoints to soft-delete; added `deleted_at IS NULL` filter to 4 list queries; added 4 restore endpoints |
+| `backend/app/routers/warehouse.py` | Modified | Fixed `commit()`→`flush()`; added restore endpoints for Warehouse (cascade) and InventoryLocation |
+| `backend/alembic/versions/20260306_1200_00_f1a2b3c4d5e6_...` | Created | Migration: adds `deleted_at` + partial indexes to 4 reference tables |
+
+### New API Endpoints (6 restore endpoints)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/items/types/{id}/restore` | Restore soft-deleted item type |
+| POST | `/api/v1/items/categories/{id}/restore` | Restore soft-deleted category |
+| POST | `/api/v1/items/brands/{id}/restore` | Restore soft-deleted brand |
+| POST | `/api/v1/items/uoms/{id}/restore` | Restore soft-deleted UOM |
+| POST | `/api/v1/warehouse/{id}/restore` | Restore warehouse + cascade-restore locations |
+| POST | `/api/v1/warehouse/locations/{id}/restore` | Restore single inventory location |
+
+---
+
+## [PRE-ALPHA v0.5.35 | 2026-03-06 16:00] — Move Location Management into Settings page
+
+**What changed:** Moved Location Management UI from standalone `/inventory/locations` page into **Settings > Warehouse > Locations & Sections** sub-tab, replacing the previous `WarehouseLocationCard`. Created `LocationManagementSection.tsx` wrapper in `pages/settings/` that imports the reusable tree/wizard/preview components from `pages/warehouse/locations/`. Removed standalone route and nav item. Deleted `LocationManagementPage.tsx` (dead code).
+
+**Why:** Location management is an administrative/configuration concern, not a day-to-day inventory operation. Placing it under Settings > Warehouse keeps the Inventory nav focused on operational pages (levels, movements, alerts) while giving warehouse admins a natural location for scaffolding and viewing locations.
+
+### Frontend Changes
+
+| File | Action | Notes |
+|------|--------|-------|
+| `frontend/src/pages/settings/LocationManagementSection.tsx` | Created | Settings-embedded wrapper — border styling (no nested cards), uses `useWarehouse()` context |
+| `frontend/src/pages/settings/SettingsPage.tsx` | Modified | Replaced `WarehouseLocationCard` import/usage with `LocationManagementSection` |
+| `frontend/src/App.tsx` | Modified | Removed `/inventory/locations` route and `LocationManagementPage` import |
+| `frontend/src/components/layout/nav.config.tsx` | Modified | Removed "Locations" nav item from Inventory section |
+| `frontend/src/pages/warehouse/locations/LocationManagementPage.tsx` | Deleted | Dead code after move |
+
+### Documentation Changes
+
+| File | Action | Notes |
+|------|--------|-------|
+| `docs/official_documentation/frontend-development-progress.md` | Modified | v0.5.35 entry |
+| `docs/official_documentation/version_update.md` | Modified | This entry |
+
+---
+
+## [PRE-ALPHA v0.5.34 | 2026-03-06 15:00] — Warehouse Location Management frontend page
+
+**What changed:** Built `LocationManagementPage` at `/inventory/locations` with Location Tree sidebar (accordion hierarchy), Bulk Creation Wizard (range inputs per hierarchy level), and Preview Table (Cartesian product preview before save). Added TanStack Query (`@tanstack/react-query`) and Lucide icons (`lucide-react`). Wrapped App in `QueryClientProvider`. Added nav item under Inventory.
+
+**Why:** Closes the frontend loop for the bulk-generate (v0.5.32) and hierarchy (v0.5.33) backend endpoints. Warehouse managers need a visual tool for location exploration and mass scaffolding.
+
+### Frontend Changes
+
+| File | Action | Notes |
+|------|--------|-------|
+| `frontend/src/pages/warehouse/locations/LocationManagementPage.tsx` | Created | Main page with TanStack Query |
+| `frontend/src/pages/warehouse/locations/LocationTree.tsx` | Created | Recursive accordion tree |
+| `frontend/src/pages/warehouse/locations/BulkCreationWizard.tsx` | Created | Range/values inputs per level |
+| `frontend/src/pages/warehouse/locations/PreviewTable.tsx` | Created | Paginated preview table |
+| `frontend/src/pages/warehouse/locations/LocationManagementPage.css` | Created | Panel layout + scrollbar |
+| `frontend/src/App.tsx` | Modified | QueryClientProvider + /inventory/locations route |
+| `frontend/src/components/layout/nav.config.tsx` | Modified | Locations nav item |
+| `frontend/src/api/base_types/warehouse.ts` | Modified | +5 types (LocationTreeNode, SegmentRangeInput, BulkGenerate*) |
+| `frontend/src/api/base/warehouse.ts` | Modified | +2 API functions |
+| `frontend/package.json` | Modified | +@tanstack/react-query, +lucide-react |
+| `docs/official_documentation/frontend-development-progress.md` | Modified | v0.5.34 entry |
+| `docs/official_documentation/version_update.md` | Modified | This entry |
+
+---
+
+## [PRE-ALPHA v0.5.33 | 2026-03-06 14:00] — Location hierarchy tree endpoint + rewritten tree builder
+
+**What changed:** Rewrote `location_tree.py` with true O(n) single-pass tree construction (was O(k * levels) due to repeated key scans). Added `total_locations` count at every node and improved summaries (e.g. "Aisle A01 contains 20 locations" with total leaf count, not just direct children). Added `GET /api/v1/warehouse/{id}/locations/hierarchy` endpoint.
+
+**Why:** The frontend needs a nested tree for warehouse location navigation (expandable drill-down). The previous implementation scanned all keys per depth level per recursive call. The rewrite uses `setdefault`-based dict nesting (Phase 1) + bottom-up leaf count propagation (Phase 2) + single format walk (Phase 3) — all O(n).
+
+### Backend Changes
+
+| File | Action | Notes |
+|------|--------|-------|
+| `backend/app/services/location_tree.py` | Rewritten | 3-phase O(n) algorithm: setdefault tree build → bottom-up total_locations count → JSON format. Leaf nodes include `location_id`, `display_code`, `is_active`, `sort_order` |
+| `backend/app/routers/warehouse.py` | Modified | Added `GET /{warehouse_id}/locations/hierarchy` endpoint; imports `build_location_tree` |
+
+### Documentation Changes
+
+| File | Action | Notes |
+|------|--------|-------|
+| `docs/official_documentation/web-api.md` | Modified | Added hierarchy endpoint to table |
+| `docs/official_documentation/version_update.md` | Modified | This entry |
+
+---
+
+## [PRE-ALPHA v0.5.32 | 2026-03-06 13:00] — Bulk-generate inventory locations endpoint
+
+**What changed:** Added `POST /api/v1/warehouse/{id}/locations/bulk-generate` endpoint with range-based Cartesian product generation. New service module `location_generator.py` expands `SegmentRange` specs (prefix+range or explicit values list) into location tuples and bulk-inserts with SAVEPOINT-per-row duplicate handling.
+
+**Why:** Warehouse managers need to scaffold hundreds of locations at once (e.g. "sections A1-A5, aisles 01-10, racks R1-R8, bins B01-B04") rather than creating them individually. The Cartesian product approach with per-segment range specs is the standard warehouse addressing pattern.
+
+### Backend Changes
+
+| File | Action | Notes |
+|------|--------|-------|
+| `backend/app/services/location_generator.py` | Created | `expand_ranges()` (pure Cartesian product) + `bulk_generate_locations()` (async DB insert with SAVEPOINT per-row) |
+| `backend/app/schemas/warehouse.py` | Modified | Added `SegmentRange` (range/values modes), `BulkGenerateRequest`, `BulkGenerateError`, `BulkGenerateResponse` |
+| `backend/app/routers/warehouse.py` | Modified | Added `POST /{warehouse_id}/locations/bulk-generate` endpoint after single-location CRUD |
+
+### Documentation Changes
+
+| File | Action | Notes |
+|------|--------|-------|
+| `docs/official_documentation/web-api.md` | Modified | Added bulk-generate endpoint + request/response type docs |
+| `docs/official_documentation/version_update.md` | Modified | This entry |
+
+---
+
+## [PRE-ALPHA v0.5.32 | 2026-03-06 14:00] — Warehouse grid layout + location tree delete + wizard improvements
+
+**What changed:** Four coordinated improvements to the Warehouse Management module in Settings.
+
+1. **Warehouse Grid** — `WarehouseCard.tsx` fully rewritten from a plain list to a responsive card grid (1–4 columns). First tile is a dedicated "+ Create Warehouse" CTA; each warehouse card shows name, address, status badge, with an Edit button and a `StandardActionMenu` kebab offering Activate/Deactivate and soft-delete.
+
+2. **Location Tree Delete** — `LocationTree.tsx` redesigned to track the hierarchy path through recursive props. Every non-root node shows a `Trash2` icon on hover that fires `onDeleteNode(node, path)`. `LocationManagementSection.tsx` shows a confirmation modal stating how many sub-locations will be soft-deleted. Single bin → `DELETE /warehouse/locations/{id}`; parent node → `DELETE /warehouse/{id}/locations/subtree?section=…`.
+
+3. **Wizard Help Tooltip** — `BulkCreationWizard.tsx` adds a `HelpCircle` toggle with an inline panel explaining Range/Values modes, cartesian-product behaviour, and the 10,000 limit. Save button is gated behind a preview: disabled until "Generate Preview" is clicked, resets whenever segment config changes.
+
+4. **Safety** — all delete paths use `deleted_at` soft-delete; no hard deletes exposed in UI.
+
+### Backend Changes
+
+| File | Action | Notes |
+|------|--------|-------|
+| `backend/app/routers/warehouse.py` | Modified | `DELETE /locations/{location_id}` (single bin soft-delete); `DELETE /{warehouse_id}/locations/subtree` (bulk soft-delete by hierarchy prefix) |
+
+### Frontend Changes
+
+| File | Action | Notes |
+|------|--------|-------|
+| `frontend/src/api/base/warehouse.ts` | Modified | Added `deleteLocation`, `deleteLocationSubtree`, `LocationSubtreeFilter` |
+| `frontend/src/pages/settings/WarehouseCard.tsx` | Rewritten | Responsive card grid; `WarehouseItemCard` + `WarehouseFormPanel`; `StandardActionMenu` kebab |
+| `frontend/src/pages/settings/warehouse_locations/LocationTree.tsx` | Modified | `HierarchyPath` exported; path accumulation through tree; `Trash2` icon on hover; `onDeleteNode` prop |
+| `frontend/src/pages/settings/warehouse_locations/BulkCreationWizard.tsx` | Modified | `HelpCircle` help panel; `previewGenerated` gates Save button |
+| `frontend/src/pages/settings/LocationManagementSection.tsx` | Modified | Fixed import paths; `DeleteConfirmModal`; `handleDeleteNode` → `executeDelete` |
+| `frontend/src/pages/settings/SettingsPage.tsx` | Modified | Warehouse Management tab renders `WarehouseCard` full-width |
+
+---
+
+## [PRE-ALPHA v0.5.31 | 2026-03-06 12:00] — Fix async relationship loading in items mutation endpoints
+
+**What changed:** Replaced `session.refresh(item, attribute_names=["uom", "brand", "item_type", "category"])` with a proper `selectinload` re-fetch in `create_item`, `update_item`, and `restore_item`.
+
+**Why:** In async SQLAlchemy, calling `session.refresh()` with relationship attribute names does not reliably hydrate those relationships — the attributes can remain in an expired lazy-load state, and any subsequent access (e.g. `item.uom.uom_id`) triggers a synchronous lazy load that fails with `MissingGreenlet` in an async context. This caused `update_item` (called by the status toggle and edit save) to return a 500 error, which the frontend displayed as "Operation failed." The fix is consistent with how `list_items` and `get_item` already use `selectinload`.
+
+### Backend Changes
+
+| File | Action | Notes |
+|------|--------|-------|
+| `backend/app/routers/items.py` | Modified | `create_item`, `update_item`, `restore_item`: replaced `session.refresh()` with `select().options(selectinload())` after flush |
+
+---
+
+## [PRE-ALPHA v0.5.30 | 2026-03-06 10:00] — Enhance inventory_location: is_active, sort_order, display_code, composite unique
+
+**What changed:** Added three new columns to `inventory_location` (`is_active`, `sort_order`, `display_code`), a composite UNIQUE index on `(warehouse_id, section, zone, aisle, rack, bin)`, and a BEFORE INSERT trigger that auto-generates `display_code` from the hierarchy segments.
+
+**Why:** Locations needed an operational on/off toggle (`is_active`) separate from soft-delete (`deleted_at`), user-defined pick-path ordering (`sort_order`), a persisted human-readable code for SQL-level filtering (`display_code`), and a uniqueness constraint to prevent duplicate physical addresses within the same warehouse.
+
+### Backend Changes
+
+| File | Action | Notes |
+|------|--------|-------|
+| `backend/alembic/versions/20260306_1000_00_d5e6f7a8b9c0_enhance_inventory_location.py` | Created | Alembic migration: adds 3 columns, composite UNIQUE index, partial active index, trigger function + trigger, backfills display_code |
+| `backend/app/models/warehouse.py` | Modified | InventoryLocation: added `display_code`, `is_active`, `sort_order` fields + `__table_args__` with composite UNIQUE and partial active index |
+| `backend/app/models/triggers.py` | Modified | Added trigger #9: `generate_location_display_code` (BEFORE INSERT, CONCAT_WS of hierarchy segments) |
+| `backend/app/schemas/warehouse.py` | Modified | InventoryLocationCreate: added `is_active`, `sort_order`; InventoryLocationUpdate: added `is_active`, `sort_order`; InventoryLocationRead: added `display_code`, `is_active`, `sort_order` |
+| `backend/app/routers/warehouse.py` | Modified | All 3 location endpoints return new fields; list_locations filters soft-deleted, sorts by sort_order; update_location recomputes display_code in Python |
+
+### Documentation Changes
+
+| File | Action | Notes |
+|------|--------|-------|
+| `docs/official_documentation/database_structure.md` | Modified | Updated 2 ERD diagrams + table spec with new columns, indexes, and trigger description |
+| `docs/official_documentation/version_update.md` | Modified | This entry |
+
+---
+
+## [PRE-ALPHA v0.5.29 | 2026-03-06] — Layout restructure: full-width header + global warehouse context
+
+**What changed:** Restructured MainLayout to match new wireframe — header now spans full width (fixed top) with logo, hamburger, search, account dropdown, and notification bell. Sidebar starts below header with a global warehouse selector. Created WarehouseContext for app-wide warehouse selection. Migrated inventory pages (Levels, Movements, Alerts) to use global context instead of per-page selectors.
+
+**Why:** The previous layout had the logo inside the sidebar and the top bar nested inside the main content area (offset by sidebar width). The wireframe calls for a full-width header above both sidebar and content, with a global warehouse selector in the sidebar that broadcasts the selected warehouse to all pages.
+
+### Frontend Changes
+
+| File | Action | Notes |
+|------|--------|-------|
+| `frontend/src/api/contexts/WarehouseContext.tsx` | Created | Global warehouse selection context — fetches active warehouses, persists to localStorage, auto-selects first warehouse |
+| `frontend/src/components/layout/WarehouseSelector.tsx` | Created | Pill-shaped sidebar dropdown — reads from WarehouseContext, adapts to collapsed state, outside-click close |
+| `frontend/src/components/layout/MainLayout.tsx` | Modified | Extracted header to fixed full-width top bar (z-1300); moved logo from sidebar to header; added NotificationsNoneIcon placeholder; replaced sidebar brand with WarehouseSelector; sidebar now starts at top-64px with calc(100vh-64px) height |
+| `frontend/src/App.tsx` | Modified | Wrapped MainLayout with WarehouseProvider inside ProtectedRoute |
+| `frontend/src/pages/warehouse/InventoryLevelsPage.tsx` | Modified | Replaced local warehouseId state + WarehouseSelector with useWarehouse() context |
+| `frontend/src/pages/warehouse/InventoryMovementsPage.tsx` | Modified | Same — uses global warehouse context |
+| `frontend/src/pages/warehouse/InventoryAlertsPage.tsx` | Modified | Same — uses global warehouse context |
+
+### Layout architecture (new)
+
+```
+Header (fixed, full-width, z-1300, h-16)
+  → Logo | Hamburger | Search | Spacer | Account | Notification Bell
+
+Sidebar (fixed, top-16, z-1200, height: calc(100vh - 4rem))
+  → WarehouseSelector (pill dropdown, collapse-aware)
+  → SidebarNav (nav.config.tsx driven)
+  → Logout button
+
+Main content (margin-left for sidebar, pt-16 for header)
+  → <Outlet />
+```
+
+---
+
+## [PRE-ALPHA v0.5.28 | 2026-03-06] — Modular sidebar navigation component
+
+**What changed:** Replaced the hardcoded inline nav in `MainLayout.tsx` with a modular, config-driven sidebar navigation system consisting of two new files.
+
+**Why:** The previous sidebar encoded all routes, icons, and active-state logic directly inside `MainLayout.tsx`. Adding any new route required editing the layout component. The new architecture separates concerns — the nav config is a pure data file and `SidebarNav` is a pure render component, making it trivial to add/reorder/rename nav items without touching layout code.
+
+### Frontend Changes
+
+| File | Action | Notes |
+|------|--------|-------|
+| `frontend/src/components/layout/nav.config.tsx` | Created | TypeScript interfaces (`NavLeaf`, `NavSection`, `NavItem`), type guards, active-state helpers, and full `NAV_CONFIG` array (7 sections, 28 leaf routes) |
+| `frontend/src/components/layout/SidebarNav.tsx` | Created | Accordion nav component; `collapsed`+`onNavigate` props; controlled `openSections` state with URL auto-open on route change; `menuItemStyles` identical to previous layout |
+| `frontend/src/components/layout/MainLayout.tsx` | Modified | Replaced `<Menu>` block + `NAV_TOP`/`NAV_BOTTOM` arrays with `<SidebarNav>`; removed all unused icon imports; removed `useLocation` (now handled inside `SidebarNav`) |
+| `frontend/src/App.tsx` | Modified | Added `/dashboard/*` catch-all; `/settings/*` wildcard for SettingsPage sub-paths |
+
+### Navigation architecture
+
+```
+NAV_CONFIG (7 sections × ≤6 leaves)
+  Dashboard     → Performance Metrics, System Alerts
+  Catalog       → Items, Create New Item, Mass Upload/Import, Bundles, Translation, Item History
+  Inventory     → Stock Level, Movements, Stock Check, Triggers
+  Orders        → Order Details, Mass Ship, Cancellation, Returns & Exchanges
+  Shipments     → Management, Group Order, Scheduling, Fleet Management
+  Seller Mgmt   → Seller Profiles, Import Staging, Create New Order, Warehouse Allocation
+  Settings      → Warehouse Setup, Users & Roles, Audit Logs, Platform Configurations
+```
+
+---
+
+## [PRE-ALPHA v0.5.27 | 2026-03-06] — Remove Bundle sub-module entirely
+
+**What changed:** Fully removed all Bundle SKU functionality from backend and frontend. The Bundle item type, BOM table, ATP calculation, and bundle fulfillment were all removed. Pages, API functions, types, routes, and nav links are cleaned up.
+
+**Why:** Bundles were premature — the feature required a separate BOM table (`item_bundle_components`), virtual ATP logic, and a dedicated Catalog sub-section. These add complexity without immediate business need. Removing them simplifies the codebase significantly.
+
+### Backend Changes
+
+| File | Action | Notes |
+|------|--------|-------|
+| `backend/alembic/versions/20260305_…_drop_item_bundle_components.py` | Created | Drops `item_bundle_components` table |
+| `backend/app/models/items.py` | Modified | Removed `ItemBundleComponent` model |
+| `backend/app/schemas/items.py` | Modified | Removed `BundleComponentCreate/Update/Read`, `BundleATPRead`, `BundleMembershipRead` |
+| `backend/app/routers/items.py` | Modified | Removed all `/bundle` endpoints + imports |
+| `backend/app/services/bundle/` | Deleted | Removed `stock.py`, `fulfillment.py`, `__init__.py` |
+| `backend/app/models/seed.py` | Modified | Removed `"Bundle"` from `_ITEM_TYPES` |
+
+### Frontend Changes
+
+| File | Action | Notes |
+|------|--------|-------|
+| `frontend/src/pages/bundles/` | Deleted | Entire directory: `BundlesListPage`, `BundleBOMTable`, `BundleMassUpload` |
+| `frontend/src/pages/catalog/` | Deleted | Entire directory: `BundleFormPage`, `CatalogBundlesPage` |
+| `frontend/src/pages/items/BundleComponentsTab.tsx` | Deleted | Removed bundle BOM tab from ItemFormPage |
+| `frontend/src/api/base/items.ts` | Modified | Removed bundle API functions |
+| `frontend/src/api/base_types/items.ts` | Modified | Removed bundle type interfaces |
+| `frontend/src/api/base/warehouse.ts` | Modified | Removed `fulfillBundle` function |
+| `frontend/src/api/base_types/warehouse.ts` | Modified | Removed `BundleFulfillRequest` |
+| `frontend/src/App.tsx` | Modified | Removed `/catalog/bundles/*` routes |
+| `frontend/src/components/layout/MainLayout.tsx` | Modified | Removed Bundles nav item + `RedeemIcon` import |
+| `frontend/src/pages/items/ItemFormPage.tsx` | Modified | Removed bundle tab, `bundleTypeId` logic, bundle navigation hint |
+| `frontend/src/pages/items/ItemsListPage.tsx` | Modified | Removed `bundleTypeId` exclude filter from list + counts |
+| `frontend/src/pages/warehouse/InventoryLevelsPage.tsx` | Modified | Removed `BundleATPLookup` component |
+| `frontend/src/pages/warehouse/InventoryMovementsPage.tsx` | Modified | Removed bundle fulfillment mode from Record Movement modal |
+
+---
+
+## [PRE-ALPHA v0.5.26 | 2026-03-04] — Bundle Module Refactor: BundlesListPage, BundleBOMTable, Mass Upload Scaffold
+
+**What changed:** Replaced the old `CatalogBundlesPage` with a purpose-built `BundlesListPage`; created `BundleBOMTable` as an improved BOM editor with inline qty stepper and optimistic UI; scaffolded `BundleMassUpload` modal; updated `BundleComponentRead` type.
+
+**Why:** The previous bundles page included Brand (irrelevant — brand belongs to component items) and lacked Virtual ATP visibility and mass upload capability. The BOM editor used a plain number input — replaced with a [−/+] stepper for easier quantity adjustment. Deletes are now optimistic (immediate removal with revert on failure) for a faster, more responsive UX.
+
+### Frontend Changes
+
+| File | Action | Notes |
+|------|--------|-------|
+| `frontend/src/api/base_types/items.ts` | Modified | Added `category_name?: string \| null` to `BundleComponentRead` |
+| `frontend/src/pages/bundles/BundlesListPage.tsx` | Created | Replaces `CatalogBundlesPage`: no Brand column; Category column; Virtual ATP column per-warehouse; Mass Upload button; `StandardActionMenu` actions |
+| `frontend/src/pages/bundles/components/BundleBOMTable.tsx` | Created | Enhanced BOM table: `[−] qty [+]` stepper, category column, optimistic delete + revert, per-row save spinner |
+| `frontend/src/pages/bundles/components/BundleMassUpload.tsx` | Created | Scaffold modal with CSV dropzone placeholder and template download stub |
+| `frontend/src/App.tsx` | Modified | Route `/catalog/bundles` now points to `BundlesListPage` |
+
+---
+
+## [PRE-ALPHA v0.5.25 | 2026-03-04] — Hotfix: Apply pending warehouse soft-delete migration
+
+**What changed:** Applied the pending Alembic migration `b3c4d5e6f7a8` (`add_soft_delete_to_warehouse`) to the live database. The migration added `deleted_at` columns to `warehouse` and `inventory_location` tables.
+
+**Why:** The `GET /api/v1/warehouse` endpoint queries `Warehouse.deleted_at.is_(None)`, which fails with a PostgreSQL column-not-found error when the migration has not been run. This caused the Settings → Warehouse → Management card to show "Failed to load warehouses." The migration script existed but was never executed against the DB.
+
+**Fix:** Ran `python -m alembic upgrade head` from `backend/`. DB is now at revision `b3c4d5e6f7a8 (head)`.
+
+---
+
+## [PRE-ALPHA v0.5.24 | 2026-03-04] — Universal Action Menu + Warehouse Soft Delete & Duplication
+
+**What changed:** Added soft-delete support to the `warehouse` and `inventory_location` tables via Alembic migration; introduced three new warehouse endpoints (`PATCH /{id}/toggle-status`, `DELETE /{id}`, `POST /{id}/duplicate`); created a reusable `StandardActionMenu` kebab component; upgraded `WarehouseListPage` to use the new actions with an optimistic UI.
+
+**Why:** Hard deletes are destructive and break relational history (inventory levels, movement logs, alerts). Soft delete preserves data integrity while hiding deactivated records. The action menu is a generic pattern reusable across all entity types in the system.
+
+### Database Changes
+
+| Table | Change |
+|-------|--------|
+| `warehouse` | Added `deleted_at TIMESTAMP NULL`; added partial index `idx_warehouse_not_deleted` |
+| `inventory_location` | Added `deleted_at TIMESTAMP NULL`; added partial index `idx_inventory_location_not_deleted` |
+
+**Migration:** `backend/alembic/versions/20260304_1200_00_b3c4d5e6f7a8_add_soft_delete_to_warehouse.py`
+
+### Backend Changes
+
+| File | Change |
+|------|--------|
+| `backend/app/models/warehouse.py` | Added `deleted_at: Optional[datetime]` to `Warehouse` and `InventoryLocation`; added `idx_warehouse_not_deleted` index to `Warehouse.__table_args__` |
+| `backend/app/schemas/warehouse.py` | Added `deleted_at` field to `WarehouseRead`; added `WarehouseDuplicateResponse` schema |
+| `backend/app/routers/warehouse.py` | Updated `GET /` to exclude soft-deleted rows; updated `GET /{id}`, `PATCH /{id}` to return 404 for deleted warehouses; added `PATCH /{id}/toggle-status`, `DELETE /{id}` (soft delete + cascade locations), `POST /{id}/duplicate` (deep copy via single `INSERT...SELECT`) |
+
+### Frontend Changes
+
+| File | Change |
+|------|--------|
+| `frontend/src/api/base_types/warehouse.ts` | Added `deleted_at: string \| null` to `WarehouseRead`; added `WarehouseDuplicateResponse` interface |
+| `frontend/src/api/base/warehouse.ts` | Added `toggleWarehouseStatus`, `deleteWarehouse`, `duplicateWarehouse` functions |
+| `frontend/src/components/common/StandardActionMenu.tsx` | **New** — reusable kebab menu (`⋮`) with Edit / Activate|Deactivate / Duplicate / Delete options; inline confirm step for delete; click-outside close; state machine (`closed → open → confirming`) |
+| `frontend/src/pages/warehouse/WarehouseListPage.tsx` | Replaced inline toggle + row-click-edit pattern with `StandardActionMenu`; added `handleToggle`, `handleDelete`, `handleDuplicate` handlers with optimistic local state updates; added auto-dismissing success banner; removed full re-fetch on every action (local state mutation instead) |
+
+---
+
+## [PRE-ALPHA v0.5.23 | 2026-03-04] — Settings Module Expansion (Items Data, Warehouse Locations, Platforms)
+
+**What changed:** Extended the Settings page into three distinct sections — Items Data, Warehouse, and Platforms. Added backend CRUD for inventory locations and registered the platform router. Created `PlatformCard` and `WarehouseLocationCard` page-local components.
+
+**Why:** Operators need a single administrative surface to configure lookup tables, warehouse storage topology, and marketplace connections without modifying the database directly.
+
+### Backend Changes
+
+| File | Change |
+|------|--------|
+| `backend/app/schemas/warehouse.py` | Added `InventoryLocationCreate` and `InventoryLocationUpdate` Pydantic schemas |
+| `backend/app/routers/warehouse.py` | Added `POST /{warehouse_id}/locations`, `PATCH /locations/{location_id}`, `DELETE /locations/{location_id}` endpoints; delete guard prevents removal of locations that have inventory levels assigned |
+| `backend/app/main.py` | Registered `platforms_router` at prefix `/api/v1` (exposing `GET/POST/PATCH /platforms` and `GET/POST/PATCH /sellers`) |
+
+### Frontend Changes
+
+| File | Change |
+|------|--------|
+| `frontend/src/api/base_types/platform.ts` | New — `PlatformRead`, `PlatformCreate`, `PlatformUpdate`, `SellerRead`, `SellerCreate`, `SellerUpdate` types |
+| `frontend/src/api/base/platform.ts` | New — `listPlatforms`, `getPlatform`, `createPlatform`, `updatePlatform`, `listSellers`, `getSeller`, `createSeller`, `updateSeller` functions |
+| `frontend/src/api/base_types/warehouse.ts` | Added `InventoryLocationCreate` and `InventoryLocationUpdate` types |
+| `frontend/src/api/base/warehouse.ts` | Added `createLocation`, `updateLocation`, `deleteLocation` functions |
+| `frontend/src/pages/settings/PlatformCard.tsx` | New — inline Add/Edit form card for platform CRUD (name, address, postcode, API endpoint, active toggle); no delete (deactivate via toggle) |
+| `frontend/src/pages/settings/WarehouseLocationCard.tsx` | New — per-warehouse location CRUD card; warehouse selector loads active warehouses; grid form for section/zone/aisle/rack/bin; location displayed as formatted code (e.g. `A-Z1-01-R3-B2`) |
+| `frontend/src/pages/settings/SettingsPage.tsx` | Reorganised into three sections: **Items Data** (Item Types, Categories, Brands, UOMs, Statuses), **Warehouse** (WarehouseLocationCard), **Platforms** (PlatformCard); section descriptions added |
+
+### Design decisions
+- **Platform router prefix** — mounted at `/api/v1` (not `/api/v1/platform`) because the router's own paths begin with `/platforms` and `/sellers`
+- **Location delete guard** — backend returns HTTP 400 if the location has InventoryLevel rows to prevent orphaned stock data
+- **No platform delete** — platforms are reference data linked to historical orders; deactivation via `is_active` toggle is the correct operation
+- **Location code format** — `section-zone-aisle-rack-bin` with empty parts omitted; fallback to `LOC-{id}` if all fields blank
+
+---
+
+## [PRE-ALPHA v0.5.22 | 2026-03-04 16:00] — Bundle Image Upload + Delete
+
+**What changed:** Added image upload to `BundleFormPage` and a delete action to `CatalogBundlesPage`. The Bundles list now also shows a thumbnail alongside each bundle name.
+
+**Why:** Bundles are presented to operators alongside regular items; having no image meant they could not be visually differentiated in lists or exports. Delete was needed so operators can remove test/obsolete bundles without going through the DB directly.
+
+### Frontend Changes
+
+| File | Change |
+|------|--------|
+| `frontend/src/pages/catalog/BundleFormPage.tsx` | Added `imageUrl`, `imageUploading` state and `fileInputRef`; image upload UI block (click-to-upload square with preview, remove button, hidden `<input type="file">`); `image_url` included in both `createItem` and `updateItem` payloads; edit-mode load sets `imageUrl` from `item.image_url` |
+| `frontend/src/pages/catalog/CatalogBundlesPage.tsx` | Added `deleteItem` + `DeleteOutlineIcon` + `ImageIcon` imports; `deleting` state; `handleDelete()` with confirm dialog; Bundle Name column shows 10×10 thumbnail (`image_url` or placeholder); Actions column expanded to edit + delete icon pair |
+
+### Design decisions
+- **Same image upload pattern as ItemFormPage** — `uploadItemImage(file)` call, separate `imageUploading` spinner state, hidden `<input type="file">` cleared after each upload to allow re-selecting the same file
+- **Thumbnail in list** — 10×10 rounded square consistent with `ItemsListPage`; placeholder shows `ImageIcon` in muted colour
+- **Soft-delete aware** — Delete button disabled if `b.deleted_at` is already set (bundle already soft-deleted); consistent with items behaviour
+
+---
+
+## [PRE-ALPHA v0.5.21 | 2026-03-04 14:00] — Bundles Sub-Module (Catalog)
+
+**What changed:** New Bundles sub-module under the Catalog section of the frontend. Allows operators to create and manage Bundle items (grouped products sold as a single unit) from a dedicated UI, separate from the general Items form.
+
+**Why:** Bundles have a distinct creation workflow — they require selecting component items, setting per-component quantities, and either manually entering or auto-generating a composite SKU. Embedding this inside the general Item form would produce a confusing UX for non-bundle items. A dedicated sub-module gives bundle management a clear, purpose-built interface aligned with the backend's `ItemBundleComponent` BOM schema introduced in v0.5.17.
+
+### Frontend Changes
+
+| File | Change |
+|------|--------|
+| `frontend/src/pages/catalog/CatalogBundlesPage.tsx` | NEW — Bundle list page: resolves Bundle type ID via `listItemTypes()`, filters `listItems({ item_type_id })`, DataTable with ID/Name/SKU/Category/Brand/Status/Actions columns; active toggle, search, pagination |
+| `frontend/src/pages/catalog/BundleFormPage.tsx` | NEW — Create/edit form with two modes: **Create** uses local `PendingComponent[]` state → batch-submits (create item then loop `addBundleComponent`); **Edit** renders `BundleComponentsTab` for immediate API calls; auto-generate SKU toggle concatenates component SKUs; live total-qty indicator (min ≥ 2 validation) |
+| `frontend/src/components/layout/MainLayout.tsx` | Added `RedeemIcon` import; added Bundles `MenuItem` under Catalog `SubMenu` with active path detection for `/catalog/bundles` and `/catalog/bundles/*` |
+| `frontend/src/App.tsx` | Added imports for `CatalogBundlesPage` and `BundleFormPage`; added 3 routes: `/catalog/bundles`, `/catalog/bundles/new`, `/catalog/bundles/:id/edit` |
+
+### Design decisions
+- **Separate sub-module** — Bundles are Items with `item_type = "Bundle"` at the DB level, but their creation workflow (BOM, SKU generation, qty validation) is distinct enough to warrant a dedicated route/page rather than a conditional section in ItemFormPage
+- **Bundle type ID resolution** — `listItemTypes()` is called on mount in `CatalogBundlesPage` to find the Bundle type ID; this ID drives the `item_type_id` filter for `listItems()` — avoids a new backend endpoint
+- **SKU auto-generate** — `pendingComponents.map(c => c.item_sku).join('_')`; reactive via `useEffect` watching `generatedSku` and `autoSkuEnabled`; input goes read-only when toggled on
+- **Min-qty ≥ 2 validation** — `sum(quantity_per_bundle)` computed live; colour-coded indicator (green ≥ 2, amber > 0 but < 2, neutral 0); submit disabled unless valid
+- **Create vs Edit duality** — Create mode: local state + batch submit to minimise incomplete bundle states in DB; Edit mode: embeds `BundleComponentsTab` (immediate API calls, already proven from v0.5.20)
+
+---
+
+## [PRE-ALPHA v0.5.20 | 2026-03-04 10:00] — Bundle SKU Frontend UI
+
+**What changed:** Frontend Phase 4 of the Bundle SKU module. Adds Bundle Component management to the Item Form, a Bundle ATP Lookup tool to Inventory Levels, and bundle-aware fulfillment mode to the Record Movement modal.
+
+**Why:** The backend bundle API (v0.5.17–v0.5.19) was complete but had no frontend. This release closes the loop, allowing warehouse operators to: (1) define Bill-of-Materials for bundle items without touching the API directly, (2) look up live ATP for any bundle in a warehouse without running queries, and (3) record a bundle sale that atomically deducts all component stocks in a single transaction.
+
+### Frontend Changes
+
+| File | Change |
+|------|--------|
+| `frontend/src/api/base_types/items.ts` | Added `BundleComponentRead`, `BundleComponentCreate`, `BundleComponentUpdate`, `BundleATPRead`, `BundleMembershipRead` types |
+| `frontend/src/api/base/items.ts` | Added `listBundleComponents`, `addBundleComponent`, `updateBundleComponent`, `deleteBundleComponent`, `getBundleATP`, `getBundleMemberships` API functions |
+| `frontend/src/api/base_types/warehouse.ts` | Added `reserved_quantity` to `InventoryLevelEnrichedRead`; added `ReserveRequest`, `ReserveResponse`, `ReleaseRequest`, `BundleFulfillRequest` types |
+| `frontend/src/api/base/warehouse.ts` | Added `reserveStock`, `releaseStock`, `fulfillBundle` API functions; updated imports |
+| `frontend/src/pages/items/BundleComponentsTab.tsx` | NEW — BOM management tab: lists components (name, SKU, qty/bundle, active toggle, inline confirm remove); item search autocomplete (300ms debounce); add form with validation |
+| `frontend/src/pages/items/ItemFormPage.tsx` | Added tab strip (Details / Bundle Components) shown when `item_type = "Bundle"` in edit mode; renders `BundleComponentsTab` when active |
+| `frontend/src/pages/warehouse/InventoryLevelsPage.tsx` | Added `BundleATPLookup` collapsible card — item search filters for Bundle type, calls `getBundleATP` + `listBundleComponents`, shows ATP with colour-coded value and component breakdown; `Qty` column now shows `reserved_quantity` as subtitle |
+| `frontend/src/pages/warehouse/InventoryMovementsPage.tsx` | When a Bundle item is selected, shows Bundle/Manual mode selector; Bundle Fulfillment mode replaces transaction rows with bundle qty + order reference fields; submits to `POST /warehouse/fulfill/bundle` |
+
+---
+
+## [PRE-ALPHA v0.5.17–v0.5.19 | 2026-03-04 01:00] — Bundle SKU & Component Inventory Management
+
+**What changed:** Full backend implementation of Bundle SKU inventory management (Phases 1–3). Adds a Bill-of-Materials table, pessimistic stock reservation, atomic multi-component stock deduction, and a new set of API endpoints.
+
+**Why:** Warehouse operations require selling grouped product sets (e.g., "3-pack T-Shirt") where multiple physical component items are deducted from stock in a single atomic transaction. Without this, concurrent orders can oversell shared component stock. The reservation pattern (`reserved_quantity`) prevents this race condition across both standalone and bundle sale paths.
+
+### Schema Changes (v0.5.17)
+
+| File | Change |
+|------|--------|
+| `backend/app/models/items.py` | Added `ItemBundleComponent` model — Bill-of-Materials join table; added `UniqueConstraint` import; no back-populate on `Item` to avoid dual-FK ambiguity |
+| `backend/app/models/warehouse.py` | Added `reserved_quantity: int` column to `InventoryLevel`; updated `stock_status` property to use ATP (`quantity_available - reserved_quantity`); added `atp` property |
+| `backend/app/models/seed.py` | Added `"Bundle"` to `_ITEM_TYPES` seed list (7th item type) |
+| `backend/alembic/versions/20260304_0000_00_a2b3c4d5e6f7_add_bundle_tables.py` | New migration: creates `item_bundle_components` table + indexes + unique constraint; adds `reserved_quantity` column to `inventory_levels` |
+
+### Bundle Service Layer (v0.5.18)
+
+| File | Purpose |
+|------|---------|
+| `backend/app/services/bundle/__init__.py` | Package init |
+| `backend/app/services/bundle/stock.py` | `compute_bundle_atp()` — real-time ATP = MIN(FLOOR(comp_ATP / qty_per_bundle)); `get_bundle_bom()` helper |
+| `backend/app/services/bundle/fulfillment.py` | `reserve_inventory()`, `release_reservation()`, `deduct_bundle_stock()` — all use SELECT … FOR UPDATE for row-level locking; `InsufficientStockError`, `BundleNotFoundError` exceptions |
+
+### API Endpoints (v0.5.19)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/v1/items/{id}/bundle` | No | List all BOM rows for a bundle |
+| `POST` | `/api/v1/items/{id}/bundle/components` | Yes | Add component to BOM |
+| `PUT` | `/api/v1/items/{id}/bundle/components/{comp_id}` | Yes | Update component qty / active flag |
+| `DELETE` | `/api/v1/items/{id}/bundle/components/{comp_id}` | Yes | Remove component from BOM |
+| `GET` | `/api/v1/items/{id}/bundle/atp?warehouse_id=` | No | Compute virtual ATP for bundle |
+| `GET` | `/api/v1/items/{id}/bundle/memberships` | No | List all bundles that contain this item |
+| `POST` | `/api/v1/warehouse/reserve` | Yes | Reserve stock for a standalone item |
+| `POST` | `/api/v1/warehouse/release` | Yes | Release reservation (cancellation) |
+| `POST` | `/api/v1/warehouse/fulfill/bundle` | Yes | Atomic bundle stock deduction |
+
+### Schema Updates
+
+| File | Change |
+|------|--------|
+| `backend/app/schemas/items.py` | Added `BundleComponentCreate`, `BundleComponentUpdate`, `BundleComponentRead`, `BundleATPRead`, `BundleMembershipRead` |
+| `backend/app/schemas/warehouse.py` | Added `reserved_quantity` field to `InventoryLevelRead` + `InventoryLevelEnrichedRead`; added `ReserveRequest`, `ReserveResponse`, `ReleaseRequest`, `BundleFulfillRequest` |
+
+---
+
+## [PRE-ALPHA v0.5.12.1 | 2026-03-04 00:00] — Warehouse Module Bug Fixes
+
+**What changed:** Fixed two duplicate declarations introduced during warehouse module implementation.
+
+**Why:** The previous session added a second `list_movement_types` endpoint function in `warehouse.py` (the original misplaced one was already there; the fixed one was prepended — leaving two identical route handlers). Similarly, `main.py` had the warehouse router registered twice. Both duplicates are now removed.
+
+| File | Fix |
+|------|-----|
+| `backend/app/routers/warehouse.py` | Removed duplicate `list_movement_types` function (the original misplaced version after `list_warehouses`; the correct pre-`/{warehouse_id}` version is retained) |
+| `backend/app/main.py` | Removed duplicate `app.include_router(warehouse_router)` call (was registered twice, causing duplicate route registration) |
+
+---
+
+## [PRE-ALPHA v0.5.12 | 2026-03-03 21:00] — Warehouse & Inventory Frontend Module
+
+**What changed:** Full warehouse/inventory module — backend enrichments, frontend types, API layer, 4 new pages, sidebar Inventory submenu, and routing.
+
+**Why:** The warehouse backend had been written but was disconnected from the frontend. This release activates the warehouse router, adds 4 missing endpoints (enriched inventory levels, movement types, movement history + creation, alert resolution), and builds the full frontend surface for warehouse operations.
+
+### Backend Changes
+
+| File | Change |
+|------|--------|
+| `backend/app/schemas/warehouse.py` | Added `LocationSummary`, `InventoryLevelEnrichedRead`, `MovementTypeRead`, `InventoryMovementRead`, `InventoryTransactionCreate`, `InventoryMovementCreate`, `AlertResolveRequest`; updated `InventoryAlertRead` with resolution fields |
+| `backend/app/routers/warehouse.py` | Rewrote with 11 endpoints: enriched `GET /{id}/inventory` (joins Item + Location, computed stock_status), `GET /movement-types`, `GET /{id}/movements` (paginated, joins through transactions), `POST /movements` (creates movement + transactions, updates levels, prevents negative stock), `PATCH /alerts/{id}/resolve` |
+
+### Frontend Changes
+
+| File | Action |
+|------|--------|
+| `frontend/src/api/base_types/warehouse.ts` | Created — 13 TypeScript interfaces/types for all warehouse entities |
+| `frontend/src/api/base/warehouse.ts` | Created — 11 API functions (warehouses, locations, inventory, alerts, movements) |
+| `frontend/src/pages/warehouse/StockStatusBadge.tsx` | Created — color-coded badge for stock status (OK/Low/Critical/Out of Stock/Overstock) |
+| `frontend/src/pages/warehouse/WarehouseSelector.tsx` | Created — reusable warehouse dropdown, loads active warehouses on mount |
+| `frontend/src/pages/warehouse/WarehouseListPage.tsx` | Created — warehouse CRUD list with inline create/edit modal, active toggle |
+| `frontend/src/pages/warehouse/InventoryLevelsPage.tsx` | Created — stock matrix with warehouse selector, summary chips, status filter tabs, search, DataTable |
+| `frontend/src/pages/warehouse/InventoryMovementsPage.tsx` | Created — movement history with record modal (item autocomplete, multi-transaction support for transfers) |
+| `frontend/src/pages/warehouse/InventoryAlertsPage.tsx` | Created — alert center with resolve modal, resolved/unresolved filter, summary chips |
+| `frontend/src/App.tsx` | Added 4 routes: `/inventory/warehouses`, `/inventory/levels`, `/inventory/movements`, `/inventory/alerts` |
+| `frontend/src/components/layout/MainLayout.tsx` | Added Inventory submenu with 4 nav items (Warehouses, Stock Levels, Movements, Alerts) |
+| `docs/official_documentation/web-api.md` | Updated Warehouse section with 4 new endpoints and response types; added warehouse API functions to frontend table |
+
+---
+
+## [PRE-ALPHA v0.5.11 | 2026-03-03 16:00] — Items Mass Upload
+
+**What changed:** Full end-to-end mass upload for the Items catalog. Users can upload a CSV or Excel file from the new `/catalog/items/upload` page. Client-side parsing (via `xlsx`) shows a 5-row preview before confirmation. The backend validates every row, resolves FK names (UOM/Brand/Category/Item Type) to IDs, rejects duplicates, and returns a structured result with per-row errors.
+
+**Why:** Manual item creation one-by-one is impractical for large catalogs. Mass upload lets operators seed or refresh hundreds of items in a single operation, with transparent error feedback so bad rows can be fixed without re-uploading the entire file.
+
+### Backend Changes
+
+| File | Change |
+|------|--------|
+| `backend/app/schemas/items.py` | Added `ImportRowError` and `ImportResult` Pydantic models |
+| `backend/app/services/items_import/__init__.py` | New service package (empty init) |
+| `backend/app/services/items_import/parser.py` | `parse_file()` — reads CSV/Excel, normalises column aliases, returns `list[dict]` |
+| `backend/app/services/items_import/validator.py` | `validate_and_resolve()` — validates required fields, lengths, no-spaces on SKU, FK name-to-ID resolution (1 SELECT per table), in-file + DB duplicate detection |
+| `backend/app/services/items_import/importer.py` | `import_items()` — orchestrates parse → validate → bulk insert |
+| `backend/app/routers/items.py` | Added `POST /import` endpoint (auth required, 10 MB limit, .csv/.xlsx/.xls only) |
+
+### Frontend Changes
+
+| File | Change |
+|------|--------|
+| `frontend/src/api/base_types/items.ts` | Added `ImportRowError` and `ItemsImportResult` interfaces |
+| `frontend/src/api/base/items.ts` | Added `importItems(file)` function (multipart FormData, same pattern as `uploadItemImage`) |
+| `frontend/src/pages/items/ItemsMassUploadPage.tsx` | New page: instructions card, drag-and-drop drop zone, `xlsx` client-side parse + 5-row preview table, "Confirm & Upload" flow, result card with success/error summary and row-level error table |
+| `frontend/src/App.tsx` | Added route `/catalog/items/upload` → `ItemsMassUploadPage` |
+| `frontend/src/pages/items/ItemsListPage.tsx` | Wired "Mass Upload" button to navigate to `/catalog/items/upload`; replaced `KeyboardArrowDownIcon` with `UploadFileIcon` |
+
+### npm dependency added
+- `xlsx` (SheetJS) — client-side Excel/CSV parsing for preview
+
+---
+
 ## [PRE-ALPHA v0.5.10.1 | 2026-03-03] — Documentation Sync
 
 ### Files Changed

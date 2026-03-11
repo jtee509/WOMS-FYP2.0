@@ -46,6 +46,7 @@ class Platform(SQLModel, table=True):
     # Optional platform configuration
     api_endpoint: Optional[str] = Field(default=None, max_length=500)
     is_active: bool = Field(default=True)
+    is_online: bool = Field(default=True, description="True = online marketplace, False = offline/physical store")
     
     # Timestamps
     created_at: datetime = Field(default_factory=datetime.utcnow)

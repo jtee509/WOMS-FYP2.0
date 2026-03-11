@@ -277,14 +277,6 @@ async def load_item_master(
             sku_name = _clean(row.get("SKU Name"))
             uom_name = _clean(row.get("BaseUOM"))
 
-            product_number: int | None = None
-            raw_no = _clean(row.get("No."))
-            if raw_no:
-                try:
-                    product_number = int(float(raw_no))
-                except (ValueError, OverflowError):
-                    pass
-
             uom_id = await _get_or_create_uom(uom_name) if uom_name else None
 
             try:
@@ -297,7 +289,6 @@ async def load_item_master(
                     item.item_name = item_name
                     item.sku_name = sku_name
                     item.uom_id = uom_id
-                    item.product_number = product_number
                     session.add(item)
                 else:
                     new_item = Item(
@@ -305,7 +296,6 @@ async def load_item_master(
                         item_name=item_name,
                         sku_name=sku_name,
                         uom_id=uom_id,
-                        product_number=product_number,
                     )
                     session.add(new_item)
                     # flush so the same master_sku on a later sheet is found by select()

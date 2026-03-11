@@ -191,7 +191,7 @@ async def update_trip(
     update_data = body.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(trip, key, value)
-    trip.updated_at = datetime.now(timezone.utc)
+    trip.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
     await session.flush()
     await session.refresh(trip)

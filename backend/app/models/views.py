@@ -24,6 +24,7 @@ Views defined:
   10. v_order_modifications       — order modification audit trail
   11. v_order_price_adjustments   — price adjustment tracking
   12. v_order_operations_summary  — complete order operations overview
+  13. v_bundles                    — bundle listings identified from listing_component
 """
 
 from sqlalchemy import text
@@ -541,6 +542,47 @@ _VIEW_SQL: list[tuple[str, str]] = [
         p.platform_name, s.store_name,
         o.order_status, o.cancellation_status,
         o.order_date, o.created_at, o.updated_at
+    """),
+
+    # -------------------------------------------------------------------------
+    # 13. BUNDLES VIEW
+    #
+    # WHY: Distinguishes bundles from individual items at the database level.
+    # A "Bundle" is any listing_id in listing_component that either:
+    #   (a) has more than one unique item_id, OR
+    #   (b) has a single item_id with quantity > 1.
+    #
+    # Returns one row per bundle listing with component count, total quantity,
+    # and the resolved item details from the items table.
+    # -------------------------------------------------------------------------
+    ("v_bundles", """
+    CREATE OR REPLACE VIEW v_bundles AS
+    WITH bundle_candidates AS (
+        SELECT
+            lc.listing_id,
+            COUNT(DISTINCT lc.item_id)       AS distinct_items,
+            SUM(lc.quantity)                  AS total_quantity,
+            MAX(lc.quantity)                  AS max_component_qty
+        FROM listing_component lc
+        GROUP BY lc.listing_id
+        HAVING COUNT(DISTINCT lc.item_id) > 1
+            OR (COUNT(DISTINCT lc.item_id) = 1 AND MAX(lc.quantity) > 1)
+    )
+    SELECT
+        ps.listing_id,
+        ps.platform_sku,
+        ps.platform_seller_sku_name,
+        p.platform_name,
+        s.store_name                         AS seller_name,
+        bc.distinct_items                    AS component_count,
+        bc.total_quantity                    AS total_bundle_quantity,
+        ps.is_active                         AS listing_active,
+        ps.created_at                        AS listing_created_at,
+        ps.updated_at                        AS listing_updated_at
+    FROM bundle_candidates bc
+    JOIN platform_sku ps   ON bc.listing_id  = ps.listing_id
+    JOIN platform p        ON ps.platform_id = p.platform_id
+    JOIN seller s          ON ps.seller_id   = s.seller_id
     """),
 ]
 

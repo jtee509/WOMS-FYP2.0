@@ -12,7 +12,6 @@ WHY Python instead of migrations/004_seed_data.sql:
 
 Seed tables:
   - action_type       (9 rows)
-  - status            (5 rows)  — item statuses
   - item_type         (6 rows)
   - base_uom          (8 rows)
   - inventory_type    (6 rows)
@@ -45,11 +44,9 @@ _ACTION_TYPES = [
     ("IMPORT",      "Data imported"),
 ]
 
-_STATUSES = ["Active", "Inactive", "Discontinued", "Out of Stock", "Pending"]
-
 _ITEM_TYPES = [
     "Raw Material", "Finished Good", "Office Supplies",
-    "Component", "Packaging", "Consumable",
+    "Component", "Packaging", "Consumable", "Bundle",
 ]
 
 _BASE_UOMS = ["Each", "PCS", "Box", "Carton", "Kg", "Liter", "Pack", "Set"]
@@ -174,12 +171,6 @@ async def seed_database(session: AsyncSession) -> None:
             "VALUES (:name, :desc, NOW()) ON CONFLICT (action_name) DO NOTHING"
         ),
         [{"name": n, "desc": d} for n, d in _ACTION_TYPES],
-    )
-
-    # status (item statuses)
-    await session.execute(
-        text("INSERT INTO status (status_name) VALUES (:name) ON CONFLICT (status_name) DO NOTHING"),
-        [{"name": s} for s in _STATUSES],
     )
 
     # item_type

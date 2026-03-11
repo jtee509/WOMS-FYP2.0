@@ -11,14 +11,16 @@ It configures the FastAPI application with:
 """
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import AsyncGenerator
 
 from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
-from app.config import settings, log_env_status
-from app.database import init_db, check_db_connection
+from app.config import settings
+from app.database import init_db_full, check_db_connection
 
 
 # =============================================================================
@@ -38,13 +40,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     print(f"Starting {settings.app_name} v{settings.app_version}")
     print(f"Environment: {settings.environment}")
     print(f"Debug mode: {settings.debug}")
-    log_env_status()
     
     # Initialize database schema (optional - comment out if using Alembic)
     if settings.debug:
         try:
-            await init_db()
-            print("[OK] Database schema initialized")
+            await init_db_full()
+            print("[OK] Database fully initialized (schema + triggers + views + seed)")
         except Exception as e:
             print(f"[WARN] Database initialization skipped: {e}")
 
@@ -53,9 +54,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         print("[OK] Database connection verified")
     else:
         print("[WARN] Database connection failed - check your configuration")
-        print("       Ensure: 1) .env exists (run python setup_env.py)")
-        print("               2) PostgreSQL is running")
-        print("               3) DATABASE_USER/DATABASE_PASSWORD match your DB")
     
     yield
     
@@ -111,6 +109,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# =============================================================================
+# Static File Serving (uploaded images)
+# =============================================================================
+
+_uploads_dir = Path(__file__).resolve().parent.parent / "uploads"
+_uploads_dir.mkdir(parents=True, exist_ok=True)
+(_uploads_dir / "items").mkdir(exist_ok=True)
+
+app.mount("/uploads", StaticFiles(directory=str(_uploads_dir)), name="uploads")
 
 
 # =============================================================================
@@ -188,78 +197,58 @@ from app.routers import order_import as order_import_router
 from app.routers import reference as reference_router
 from app.routers import ml_sync as ml_sync_router
 from app.routers import auth as auth_router
-from app.routers import items as items_router
-from app.routers import orders as orders_router
-from app.routers import platforms as platforms_router
-from app.routers import warehouse as warehouse_router
-from app.routers import delivery as delivery_router
-from app.routers import users as users_router
 
-# --- Authentication ---
-app.include_router(
-    auth_router.router,
-    prefix=f"{settings.api_v1_prefix}/auth",
-    tags=["Authentication"],
-)
-
-# --- Orders domain (CRUD + import) ---
-app.include_router(
-    orders_router.router,
-    prefix=f"{settings.api_v1_prefix}/orders",
-    tags=["Orders"],
-)
 app.include_router(
     order_import_router.router,
     prefix=f"{settings.api_v1_prefix}/orders",
     tags=["Order Import"],
 )
 
-# --- Items ---
+app.include_router(
+    reference_router.router,
+    prefix=f"{settings.api_v1_prefix}/reference",
+    tags=["Reference Data"],
+)
+
+app.include_router(
+    ml_sync_router.router,
+    prefix=f"{settings.api_v1_prefix}/ml",
+    tags=["ML Staging"],
+)
+
+app.include_router(
+    auth_router.router,
+    prefix=f"{settings.api_v1_prefix}/auth",
+    tags=["Authentication"],
+)
+
+from app.routers import items as items_router
+from app.routers import warehouse as warehouse_router
+from app.routers import platforms as platforms_router
+
 app.include_router(
     items_router.router,
     prefix=f"{settings.api_v1_prefix}/items",
     tags=["Items"],
 )
 
-# --- Marketplace (Platforms + Sellers) ---
-app.include_router(
-    platforms_router.router,
-    prefix=f"{settings.api_v1_prefix}",
-    tags=["Marketplace"],
-)
-
-# --- Warehouse + Inventory ---
 app.include_router(
     warehouse_router.router,
     prefix=f"{settings.api_v1_prefix}/warehouse",
     tags=["Warehouse"],
 )
 
-# --- Delivery (Trips + Drivers) ---
 app.include_router(
-    delivery_router.router,
-    prefix=f"{settings.api_v1_prefix}/delivery",
-    tags=["Delivery"],
+    platforms_router.router,
+    prefix=settings.api_v1_prefix,
+    tags=["Platforms"],
 )
 
-# --- Users ---
-app.include_router(
-    users_router.router,
-    prefix=f"{settings.api_v1_prefix}/users",
-    tags=["Users"],
-)
-
-# --- Reference Data + ML Staging ---
-app.include_router(
-    reference_router.router,
-    prefix=f"{settings.api_v1_prefix}/reference",
-    tags=["Reference Data"],
-)
-app.include_router(
-    ml_sync_router.router,
-    prefix=f"{settings.api_v1_prefix}/ml",
-    tags=["ML Staging"],
-)
+# Future routers (uncomment as implemented):
+# from app.routers import orders, delivery, users
+# app.include_router(orders.router, prefix=f"{settings.api_v1_prefix}/orders", tags=["Orders"])
+# app.include_router(delivery.router, prefix=f"{settings.api_v1_prefix}/delivery", tags=["Delivery"])
+# app.include_router(users.router, prefix=f"{settings.api_v1_prefix}/users", tags=["Users"])
 
 
 # =============================================================================

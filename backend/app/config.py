@@ -13,38 +13,8 @@ from pydantic import field_validator, PostgresDsn
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Resolve .env from the project root regardless of CWD.
-# __file__ = backend/app/config.py -> .parent.parent.parent = project root
-_PROJECT_ROOT = Path(__file__).parent.parent.parent
-_ENV_FILE = _PROJECT_ROOT / ".env"
-
-
-def _resolve_env_file() -> Path:
-    """
-    Resolve .env file path with fallbacks.
-    Pydantic silently ignores non-existent env_file, causing connection failures.
-    We try: project root, backend/, current working directory.
-    """
-    candidates = [
-        _ENV_FILE,
-        _PROJECT_ROOT / "backend" / ".env",
-        Path.cwd() / ".env",
-        Path.cwd().parent / ".env",
-    ]
-    for p in candidates:
-        if p.exists():
-            return p
-    return _ENV_FILE  # Return default even if missing (pydantic will skip)
-
-
-def _is_unexpanded_template(url: Optional[str]) -> bool:
-    """
-    Check if URL contains unexpanded ${VAR} placeholders.
-    .env files do NOT expand ${VAR} - they are literal. Using such a URL
-    causes connection failure (e.g. username becomes literal '${DATABASE_USER}').
-    """
-    if not url or not isinstance(url, str):
-        return False
-    return "${" in url or "$}" in url
+# __file__ = backend/app/config.py → .parent.parent.parent = project root
+_ENV_FILE = Path(__file__).parent.parent.parent / ".env"
 
 
 def generate_secret_key() -> str:
@@ -62,7 +32,7 @@ class Settings(BaseSettings):
     """
     
     model_config = SettingsConfigDict(
-        env_file=str(_resolve_env_file()),
+        env_file=str(_ENV_FILE),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore"
@@ -111,9 +81,7 @@ class Settings(BaseSettings):
     @property
     def async_database_url(self) -> str:
         """Get async database URL for SQLAlchemy/SQLModel."""
-        # Reject DATABASE_URL if it contains unexpanded ${VAR} placeholders
-        # (.env does not expand variables - would cause connection failure)
-        if self.database_url and not _is_unexpanded_template(self.database_url):
+        if self.database_url:
             return self.database_url
         return (
             f"postgresql+asyncpg://{self.database_user}:{self.database_password}"
@@ -123,7 +91,7 @@ class Settings(BaseSettings):
     @property
     def sync_database_url(self) -> str:
         """Get sync database URL for Alembic migrations."""
-        if self.database_url_sync and not _is_unexpanded_template(self.database_url_sync):
+        if self.database_url_sync:
             return self.database_url_sync
         return (
             f"postgresql+psycopg://{self.database_user}:{self.database_password}"
@@ -133,7 +101,7 @@ class Settings(BaseSettings):
     @property
     def async_ml_database_url(self) -> str:
         """Get async database URL for the ML staging database."""
-        if self.ml_database_url and not _is_unexpanded_template(self.ml_database_url):
+        if self.ml_database_url:
             return self.ml_database_url
         return (
             f"postgresql+asyncpg://{self.ml_database_user}:{self.ml_database_password}"
@@ -199,16 +167,3 @@ def get_settings() -> Settings:
 
 # Export settings instance for easy import
 settings = get_settings()
-
-
-def log_env_status() -> None:
-    """
-    Log .env file status at startup for debugging connection issues.
-    Call from main.py lifespan.
-    """
-    env_path = _resolve_env_file()
-    if env_path.exists():
-        print(f"[OK] Loading .env from: {env_path}")
-    else:
-        print(f"[WARN] .env not found at {env_path}")
-        print("       Tried: project root, backend/, cwd. Run: python setup_env.py")

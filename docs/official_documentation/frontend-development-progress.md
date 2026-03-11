@@ -21,6 +21,475 @@ Format: `[PRE-ALPHA vX.Y.Z | YYYY-MM-DD HH:MM] — Brief title`
 
 ---
 
+## [PRE-ALPHA v0.5.54 | 2026-03-11] — Bundle Mass Upload
+
+**What changed:** Built a full bundle mass upload feature (backend endpoint + frontend page). Users can upload CSV/Excel files where each row is a bundle component. Rows with the same `bundle_sku` are grouped into a single bundle.
+
+**Why:** Bundles tab in the Mass Upload page was a "coming soon" placeholder. Users need to bulk-create bundles from spreadsheets, especially when migrating existing bundle data or creating many bundles at once.
+
+### New files
+- `src/pages/items/BundlesMassUploadPage.tsx` — Full upload page: CSV template download, drag-drop file picker, SheetJS preview table, result display with success/error counts and per-row error table
+- `backend/app/services/items_import/bundle_importer.py` — Backend service: parses CSV/Excel, groups by bundle_sku, resolves FKs, validates component SKUs, creates Item + PlatformSKU + ListingComponent records
+
+### Modified files
+- `backend/app/routers/items.py` — Added `POST /items/bundles/import` endpoint
+- `src/api/base/items.ts` — Added `importBundles()` function
+- `src/pages/items/CatalogUploadPage.tsx` — Bundles tab now renders `BundlesMassUploadPage` instead of placeholder
+
+### API endpoint
+- `POST /api/v1/items/bundles/import` — File upload (multipart/form-data), returns `ImportResult` (total_rows, success_rows, error_rows, errors[])
+
+---
+
+## [PRE-ALPHA v0.5.53 | 2026-03-11] — Tabbed Create & Upload Pages
+
+**What changed:** "Create New Item" and "Mass Upload" pages now have Item/Bundle tabs instead of being item-only. Created `CatalogCreatePage` (Item/Bundle segmented tabs wrapping existing form pages) and `CatalogUploadPage` (Items/Bundles tabs, bundle upload shows "coming soon" placeholder). Added `hideHeader` prop to `ItemFormPage`, `BundleFormPage`, and `ItemsMassUploadPage`. Nav entry renamed to "Create New".
+
+**Why:** Users needed a unified creation flow — switching between creating an item vs a bundle should be a tab click, not a different page. Same for mass upload, which will support bundles in a future release.
+
+### New files
+- `src/pages/items/CatalogCreatePage.tsx` — Wrapper with segmented tabs (Item/Bundle); reads `?type=bundle` query param for deep-linking
+- `src/pages/items/CatalogUploadPage.tsx` — Wrapper with segmented tabs (Items/Bundles); bundles tab shows placeholder
+
+### Modified files
+- `src/pages/items/ItemFormPage.tsx` — Added `hideHeader` prop
+- `src/pages/bundles/BundleFormPage.tsx` — Added `hideHeader` prop; back button points to `/catalog/items`
+- `src/pages/items/ItemsMassUploadPage.tsx` — Added `hideHeader` prop
+- `src/pages/items/ItemsListPage.tsx` — "Create Bundle" dropdown navigates to `/catalog/items/new?type=bundle`
+- `src/App.tsx` — Routes updated: `/catalog/items/new` → CatalogCreatePage, `/catalog/items/upload` → CatalogUploadPage, `/catalog/bundles/new` redirects
+- `src/components/layout/nav.config.tsx` — "Create New Item" → "Create New"; isActive covers bundle paths
+
+---
+
+## [PRE-ALPHA v0.5.52 | 2026-03-11] — Unified "My Items" Page (Items + Bundles Merged)
+
+**What changed:** Merged the separate Items list (`ItemsListPage`) and Bundles list (`BundlesListPage`) into a single unified "My Items" page. Removed separate Bundles/Create Bundle nav entries; `/catalog/bundles` now redirects to the unified page.
+
+**Why:** Users had to switch between two separate pages to manage items and bundles. Consolidating into one page reduces navigation friction, provides a unified view of all catalog items, and simplifies the Catalog sidebar section.
+
+### Modified files
+- `src/pages/items/ItemsListPage.tsx` — Complete rewrite: dual-tab system (primary: All/Items/Bundles; secondary: All/Live/Unpublished/Deleted), dropdown "Add New" button (Create Item / Create Bundle), visual Bundle badge (violet, LayersIcon), expandable rows for bundle components (fetched via `getBundle()`) and item variations, combined status counts across items and bundles, Item Type filter dropdown (hidden on Bundles tab)
+- `src/components/layout/nav.config.tsx` — Removed "Bundles" and "Create Bundle" nav entries; renamed "Items" to "My Items"; extended `isActive` to cover bundle paths
+- `src/App.tsx` — `/catalog/bundles` route redirects to `/catalog/items`; removed `BundlesListPage` import
+
+### Key features
+- **Primary tabs**: All (items+bundles combined), Items (excludes bundle type), Bundles (uses `listBundles` API)
+- **Secondary tabs**: All, Live, Unpublished, Deleted — counts sum across items+bundles on "All" tab, filter per-type otherwise
+- **Add New dropdown**: single button with Create Item / Create Bundle options
+- **Bundle badge**: violet pill with LayersIcon in Item Type column
+- **Expandable rows**: bundles show component table (item, SKU, qty); items show variation table
+- **Smart dispatch**: delete/restore/toggle calls correct API (item vs bundle) based on `item_type`
+
+---
+
+## [PRE-ALPHA v0.5.46 | 2026-03-09] — My Bundles Dashboard
+
+**What changed:** Built the "My Bundles" dashboard page (`BundlesListPage`) mirroring the existing "My Items" page structure, with a dedicated backend API for listing bundles with component counts.
+
+**Why:** The `/catalog/bundles` route was a PlaceholderPage. Users need a dedicated dashboard to view, search, filter, toggle status, soft-delete, restore, and inspect bundles — matching the established UX pattern from the Items module.
+
+### New files
+- `src/pages/bundles/BundlesListPage.tsx` — Full bundles dashboard: card header ("My Bundles" + "+ Create New Bundle"), 4 tabs (All/Live/Unpublished/Deleted with counts), DataTable with columns (Bundle, Components, Category, Status, Brand, Actions), expandable rows showing component breakdown
+- `src/pages/bundles/BundleFilters.tsx` — Filter bar: search (name/SKU) + Category dropdown + Brand dropdown
+
+### Modified files
+- `src/App.tsx` — `/catalog/bundles` route now renders `BundlesListPage` (was PlaceholderPage)
+- `src/api/base_types/items.ts` — Added `BundleListItem` interface (extends `ItemRead` with `component_count`, `total_quantity`)
+- `src/api/base/items.ts` — Added `listBundles()`, `getBundleCounts()`, `getBundle()` functions; added `ListBundlesParams` interface
+- `src/pages/bundles/BundleFormPage.tsx` — Edit mode now uses `getBundle(id)` instead of `updateBundle(id, {})` workaround
+
+### Key features
+- **Components column**: Badge showing "3 Items (7 qty)" per bundle — data from new `GET /items/bundles` endpoint with LEFT JOIN component counts
+- **Expand-to-view**: Clicking a bundle row fetches and displays a component breakdown table (item name, SKU, quantity) via `GET /items/bundles/{id}`
+- **Soft-delete/restore**: Uses `DELETE /items/bundles/{id}` and `POST /items/bundles/{id}/restore` — same endpoints from v0.5.45
+- **Status toggle**: Inline switch that calls `PATCH /items/bundles/{id}` with `is_active` toggle
+- **Tabs with counts**: Dedicated `GET /items/bundles/counts` endpoint scoped to Bundle type
+
+---
+
+## [PRE-ALPHA v0.5.44 | 2026-03-09] — Bundle Form Page (Create / Edit)
+
+**What changed:** Built the complete bundle creation and editing UI: a dedicated form page with searchable item picker, dynamic component list with quantity steppers, and full integration with the `POST /items/bundles` and `PATCH /items/bundles/{id}` backend endpoints.
+
+**Why:** The `/catalog/bundles` route was a PlaceholderPage. This implements the form for creating and modifying bundles — allowing users to search for items, add them as components with quantities, set bundle metadata (SKU, name, category, platform/seller), and submit in a single atomic transaction.
+
+### New files
+- `src/pages/bundles/BundleFormPage.tsx` — Main form page (create + edit modes); uses `react-hook-form`, loads dropdown options via `Promise.allSettled`, validates bundle composition client-side, handles image upload, platform/seller selection (create-only), component management
+- `src/pages/bundles/ComponentSearch.tsx` — Searchable dropdown that queries `GET /items` with debounce (350ms), excludes already-added items and Bundle-type items, shows thumbnail + name + SKU per result
+- `src/pages/bundles/ComponentList.tsx` — Dynamic component table with +/- stepper buttons, direct quantity input, delete per row, summary bar (component count + total quantity)
+
+### Modified files
+- `src/api/base_types/items.ts` — Added `BundleComponentInput`, `BundleCreateRequest`, `BundleUpdateRequest`, `BundleComponentRead`, `BundleReadResponse` interfaces
+- `src/api/base/items.ts` — Added `createBundle()` and `updateBundle()` API functions
+- `src/App.tsx` — Added routes: `/catalog/bundles/new` and `/catalog/bundles/:id/edit` pointing to `BundleFormPage`
+- `src/components/layout/nav.config.tsx` — Added "Create Bundle" nav leaf under Catalog; updated Bundles leaf with `isActive` override to exclude `/new` sub-path
+
+### UI features
+- **Searchable item picker**: type-ahead search (min 2 chars, 350ms debounce) queries active items, excludes Bundle-type items and already-selected items; dropdown shows thumbnail + name + SKU
+- **Component table**: inline quantity stepper (+/- buttons + direct input), row delete, row numbers, summary bar with total count
+- **Bundle metadata**: name, SKU, SKU display name, description, category/brand/UOM dropdowns, image upload, active toggle
+- **Platform/Seller**: required in create mode only (filtered sellers by selected platform); hidden in edit mode
+- **Client-side validation**: required fields, SKU no-spaces rule, bundle composition rules (>1 items or qty > 1), platform/seller required in create mode
+- **Error handling**: server error messages displayed in alert box; loading spinner during submit
+
+---
+
+## [PRE-ALPHA v0.5.40 | 2026-03-07] — Warehouse Overview & Location Management in Settings
+
+**What changed:** Replaced the Settings Warehouse tab placeholder with a full warehouse management experience: embedded warehouse table + inline location management panel.
+
+**Why:** The Warehouse tab was a stub. This implements the complete feature set: warehouse CRUD, hierarchical location tree, bulk pattern generator, and CSV/Excel import.
+
+### New files
+| File | Purpose |
+|---|---|
+| `pages/settings/WarehouseSettingsTab.tsx` | Warehouse table (all CRUD), expandable location panel per row |
+| `pages/settings/warehouse_locations/BulkCreationWizard.tsx` | Pattern-based location generator with Cartesian product preview |
+| `pages/settings/warehouse_locations/CsvLocationImport.tsx` | SheetJS-powered file import with validation + progress bar |
+| `pages/settings/warehouse_locations/LocationTree.tsx` | Nested tree (Section→Zone→Aisle→Rack→Bin) with edit/delete per node |
+| `pages/settings/warehouse_locations/PreviewTable.tsx` | Preview table for generated locations |
+| `pages/settings/warehouse_locations/EditNodeModal.tsx` | Modal to rename a single tree node |
+| `pages/settings/warehouse_locations/LocationManagementPage.css` | Panel layout CSS |
+
+### Modified files
+| File | Change |
+|---|---|
+| `pages/settings/LocationManagementSection.tsx` | Added `overrideWarehouseId`/`overrideWarehouseName` props; added Generator/Import tab switcher |
+| `pages/settings/SettingsPage.tsx` | Warehouse tab renders `<WarehouseSettingsTab />` |
+| `api/base_types/warehouse.ts` | Added `is_active`, `sort_order` to `InventoryLocationCreate/Update` |
+
+### Feature breakdown
+- **Warehouse table** — compact table with search, status filter, Add/Edit modal, status toggle, duplicate, soft delete; clicking "Manage" on any row expands an inline location panel
+- **Location Tree** — hierarchical expand/collapse tree with type badges, location counts, hover edit/delete actions
+- **Pattern Generator** — enable each hierarchy level independently; set prefix + numeric range (with zero-padding) or explicit comma-separated values; preview Cartesian product before committing
+- **CSV/Excel Import** — download template → upload file → parse + validate → preview with error highlighting → import row-by-row with live progress bar → result summary
+
+---
+
+## [PRE-ALPHA v0.5.39 | 2026-03-07] — Warehouse Settings Grid Refactor
+
+**What changed:** Refactored `WarehouseCard.tsx` (Settings > Warehouse > Management tab) into a fully responsive CSS Grid with a permanently-visible primary action card.
+
+**Why:** The previous implementation violated several UI contracts: the `+ Create` CTA card disappeared while the form was open (breaking the "always first" slot requirement), used non-standard breakpoints (`sm/xl`), and had no empty state for zero warehouses.
+
+### Changes in detail
+
+| Change | Before | After |
+|---|---|---|
+| Grid breakpoints | `cols-1 sm:cols-2 lg:cols-3 xl:cols-4` | `cols-1 md:cols-2 lg:cols-4` |
+| CTA card visibility | Hidden when form open | Always visible in slot 0 |
+| Create form placement | Inside grid as `col-span-full` replacing CTA | Above the grid; CTA card stays in position |
+| CTA toggle behaviour | n/a | Click again to close form (icon rotates 45°) |
+| Name font weight | `font-semibold` | `font-bold` |
+| Status badge | Inline JSX | Extracted `<StatusBadge />` component |
+| CTA card | Inline JSX | Extracted `<CreateWarehouseCard />` component |
+| Empty state | None | `<EmptyState />` with inbox icon + copy |
+
+### Files modified
+- `frontend/src/pages/settings/WarehouseCard.tsx` — full refactor (no new files created; all sub-components stay in the same file per single-file convention)
+
+---
+
+## [PRE-ALPHA v0.5.35 | 2026-03-06] — Move Location Management into Settings > Warehouse > Locations & Sections
+
+**What changed:** Relocated the Location Management UI (Location Tree, Bulk Creation Wizard, Preview Table) from its standalone page (`/inventory/locations`) into the Settings page's **Warehouse > Locations & Sections** sub-tab. Created `LocationManagementSection.tsx` in `pages/settings/` as the section wrapper. Removed the standalone route, nav item, and `LocationManagementPage.tsx`. The underlying components (`LocationTree`, `BulkCreationWizard`, `PreviewTable`) remain in `pages/warehouse/locations/` and are imported by the settings section.
+
+**Why:** The user requested the location management UI live inside the Settings > Warehouse configuration area rather than as a standalone page, keeping all warehouse configuration tools in one administrative surface.
+
+### Files created
+
+| File | Purpose |
+|------|---------|
+| `pages/settings/LocationManagementSection.tsx` | Settings-embedded version of the location management UI: uses `useWarehouse()` context, TanStack Query for hierarchy + bulk-generate, two-column layout (tree + wizard/preview) with `border` styling (no nested cards inside the settings card) |
+
+### Files modified
+
+| File | Change |
+|------|--------|
+| `pages/settings/SettingsPage.tsx` | Replaced `WarehouseLocationCard` import/usage with `LocationManagementSection` in the "configuration" sub-tab |
+| `App.tsx` | Removed `/inventory/locations` route and `LocationManagementPage` import |
+| `components/layout/nav.config.tsx` | Removed "Locations" leaf from Inventory section |
+
+### Files deleted
+
+| File | Why |
+|------|-----|
+| `pages/warehouse/locations/LocationManagementPage.tsx` | Dead code — functionality moved to `LocationManagementSection` |
+
+### Build
+
+- TypeScript: zero errors
+- Production: 949.39 kB JS (-5 kB), 37.11 kB CSS
+
+---
+
+## [PRE-ALPHA v0.5.34 | 2026-03-06] — Warehouse Location Management Components
+
+**What changed:** Built location management components with three parts: a Location Tree sidebar (accordion-style hierarchy navigation), a Bulk Creation Wizard (range inputs for each hierarchy level), and a Preview Table (Cartesian product preview before saving). Integrated TanStack Query for API state management and Lucide React for icons. Added TypeScript types and API functions for hierarchy and bulk-generate endpoints.
+
+**Why:** Warehouse managers need a visual tool to explore the location hierarchy and scaffold hundreds of locations at once. These components bridge the backend bulk-generate and hierarchy endpoints (v0.5.32-v0.5.33) with a purpose-built frontend interface.
+
+### Dependencies added
+
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `@tanstack/react-query` | ^5.x | Server-state management — `useQuery` for hierarchy fetch, `useMutation` for bulk-generate with automatic cache invalidation |
+| `lucide-react` | ^0.x | Icon library for tree nodes and wizard UI (ChevronRight, Warehouse, MapPin, Save, etc.) |
+
+### Files created (all in `src/pages/warehouse/locations/`)
+
+| File | Purpose |
+|------|---------|
+| `LocationTree.tsx` | Recursive accordion component — renders `LocationTreeNode[]` with expand/collapse, level-specific icons, count badges, display_code for leaves |
+| `BulkCreationWizard.tsx` | 5 segment cards (section/zone/aisle/rack/bin) with enable toggle, range/values mode selector, prefix/start/end/pad inputs, client-side Cartesian product preview, live validation, total combinations counter with 10K limit |
+| `PreviewTable.tsx` | Paginated preview table (50 rows/page) showing generated location codes before API call, active-column detection, large-batch warning |
+| `LocationManagementPage.css` | Fixed-width tree panel (340px), scrollbar styling, responsive stacking below 1024px |
+
+### Files modified
+
+| File | Change |
+|------|--------|
+| `App.tsx` | Wrapped Routes in `QueryClientProvider` |
+| `api/base_types/warehouse.ts` | Added `LocationTreeNode`, `SegmentRangeInput`, `BulkGenerateRequest`, `BulkGenerateError`, `BulkGenerateResponse` types |
+| `api/base/warehouse.ts` | Added `getLocationHierarchy()`, `bulkGenerateLocations()` API functions |
+
+### UX decisions
+
+- **Two-column layout** — Tree sidebar (340px fixed) on the left for exploration, wizard + preview on the right for bulk operations. Stacks vertically on mobile (<1024px).
+- **Client-side preview** — Cartesian product computed in TypeScript (`expandSegment` + `cartesianProduct`) before any API call, giving instant feedback. The same computation runs on the backend for the actual insert.
+- **Range vs Values mode** — Each hierarchy level can use numeric ranges (prefix + start/end/pad) or an explicit comma-separated values list (e.g. "COLD, DRY, AMBIENT"). This matches the backend `SegmentRange` two-mode design.
+- **10,000 combination limit** — Validated client-side and displayed as an error banner; matches backend `MAX_COMBINATIONS` guard.
+- **TanStack Query cache invalidation** — On successful bulk-generate, the `location-hierarchy` query is automatically invalidated, causing the tree sidebar to refresh with the newly created locations.
+- **Lucide icons for tree** — Different icon per hierarchy level (Warehouse, LayoutGrid, MapPin, ArrowRightLeft, Server, Box) for visual distinction at a glance.
+
+---
+
+## [PRE-ALPHA v0.5.29 | 2026-03-06] — Layout Restructure: Full-Width Header + Global Warehouse Context
+
+**What changed:** Restructured `MainLayout.tsx` to match the new wireframe layout. The header now spans the full viewport width (fixed positioning, z-1300) with Logo, Hamburger, Search, Account dropdown, and a Notification bell placeholder. The sidebar starts below the header with a global `WarehouseSelector` at the top. Created `WarehouseContext` for app-wide warehouse state and migrated all three inventory pages to consume it.
+
+**Why:** The previous layout had the logo/brand inside the sidebar and the top bar nested inside the main content area (offset by sidebar margin). The wireframe calls for a full-width top header above both sidebar and content, consistent with modern dashboard patterns. The global warehouse selector replaces per-page selectors so operators set the warehouse once and it persists across pages.
+
+### Files created
+
+| File | Purpose |
+|------|---------|
+| `api/contexts/WarehouseContext.tsx` | React context providing `warehouses`, `selectedWarehouseId`, `selectedWarehouse`, `setSelectedWarehouseId`, `loading`. Fetches active warehouses on mount, persists selection to `localStorage` (`selected_warehouse_id`), auto-selects first warehouse if nothing persisted. |
+| `components/layout/WarehouseSelector.tsx` | Sidebar pill-shaped dropdown that reads from `useWarehouse()` context. Shows warehouse name + chevron when expanded, icon-only when collapsed, dropdown with checkmark for selected item. |
+
+### Files modified
+
+| File | Change |
+|------|--------|
+| `components/layout/MainLayout.tsx` | Extracted header to fixed full-width top bar (`z-[1300]`, `h-16`); moved logo from sidebar to header; added `NotificationsNoneIcon` placeholder; replaced sidebar brand area with `LayoutWarehouseSelector`; sidebar `top: 64px`, `height: calc(100vh - 64px)`; added `HEADER_HEIGHT` constant |
+| `App.tsx` | Wrapped `<MainLayout />` in `<WarehouseProvider>` inside the `ProtectedRoute` route element |
+| `pages/warehouse/InventoryLevelsPage.tsx` | Replaced local `warehouseId` state + `WarehouseSelector` import with `useWarehouse()` context; removed per-page warehouse dropdown from header |
+| `pages/warehouse/InventoryMovementsPage.tsx` | Same migration to global warehouse context |
+| `pages/warehouse/InventoryAlertsPage.tsx` | Same migration to global warehouse context |
+
+### UX decisions
+- Logo text ("WOMS") is hidden on very small screens (`hidden sm:inline`) to save header space
+- Notification bell is a static placeholder — no badge or dropdown until backend notification system exists
+- Warehouse selector adapts to sidebar collapsed state: shows icon-only when collapsed, with a flyout dropdown positioned to the right
+- Inventory pages no longer show "Select a warehouse" empty states when using global context (auto-selects first warehouse)
+- Existing `pages/warehouse/WarehouseSelector.tsx` kept intact for backward compatibility
+
+---
+
+## [PRE-ALPHA v0.5.23 | 2026-03-04] — Settings Module Expansion
+
+**What changed:** Settings page reorganised into three named sections. Added `PlatformCard` for marketplace CRUD and `WarehouseLocationCard` for per-warehouse storage location management. Backed by new backend endpoints and API layer.
+
+**Why:** Operators need to configure warehouse topology (locations) and marketplace connections (platforms) from the same administrative surface as item attribute tables.
+
+### Files added
+
+| File | Purpose |
+|------|---------|
+| `pages/settings/PlatformCard.tsx` | Inline Add/Edit card for platform CRUD — name, address, postcode, API endpoint, active toggle |
+| `pages/settings/WarehouseLocationCard.tsx` | Per-warehouse location card — dropdown to select warehouse, grid form for section/zone/aisle/rack/bin, formatted code display (`A-Z1-01`) |
+| `api/base_types/platform.ts` | `PlatformRead/Create/Update`, `SellerRead/Create/Update` types |
+| `api/base/platform.ts` | `listPlatforms`, `createPlatform`, `updatePlatform`, `listSellers`, `createSeller`, `updateSeller` functions |
+
+### Files modified
+
+| File | Change |
+|------|--------|
+| `pages/settings/SettingsPage.tsx` | Reorganised into 3 sections: **Items Data** (Item Types, Categories, Brands, UOMs, Statuses), **Warehouse** (WarehouseLocationCard), **Platforms** (PlatformCard); section headings + descriptions added |
+| `api/base_types/warehouse.ts` | Added `InventoryLocationCreate` and `InventoryLocationUpdate` types |
+| `api/base/warehouse.ts` | Added `createLocation`, `updateLocation`, `deleteLocation` API functions |
+
+### UX decisions
+- Location code displayed as `section-zone-aisle-rack-bin` with blank parts omitted; falls back to `LOC-{id}`
+- Platform delete omitted intentionally — platforms are reference data linked to order history; deactivation via toggle is the safe operation
+- Both cards share the same inline form expansion pattern as `AttributeCard` for consistency
+
+---
+
+## [PRE-ALPHA v0.5.22 | 2026-03-04 16:00] — Bundle Image Upload + Delete
+
+**What changed:** Image upload capability added to `BundleFormPage`; delete action added to `CatalogBundlesPage`; bundle list now shows a thumbnail column.
+
+**Why:** Operators need to visually identify bundles the same way they do regular items. Delete allows removing stale bundles without DB access.
+
+### Files modified
+
+| File | Change |
+|------|--------|
+| `pages/catalog/BundleFormPage.tsx` | +`imageUrl`/`imageUploading` state + `fileInputRef`; image upload UI block (click-to-upload square, preview, remove button, hidden file input); `image_url` in create + update payloads; edit-mode sets `imageUrl` from `item.image_url` |
+| `pages/catalog/CatalogBundlesPage.tsx` | +`deleteItem`, `DeleteOutlineIcon`, `ImageIcon` imports; +`deleting` state; +`handleDelete()` with confirm dialog; Bundle Name column shows thumbnail; Actions column is now edit + delete pair |
+
+### UX decisions
+- Upload pattern identical to `ItemFormPage` — consistency is intentional so operators learn one pattern
+- Thumbnail placeholder matches `ItemsListPage` style exactly
+
+---
+
+## [PRE-ALPHA v0.5.21 | 2026-03-04 14:00] — Bundles Sub-Module (Catalog)
+
+**What changed:** New Bundles sub-module under Catalog — dedicated list page and create/edit form for Bundle-type items.
+
+**Why:** Bundle creation has a distinct workflow (component picker, qty validation, SKU generation) that does not belong in the general Item form. A dedicated sub-module gives operators a purpose-built interface while reusing the existing `ItemBundleComponent` BOM backend (v0.5.17) and `BundleComponentsTab` (v0.5.20).
+
+### Files created/modified
+
+| File | Change |
+|------|--------|
+| `pages/catalog/CatalogBundlesPage.tsx` | NEW — Bundle list: type ID resolved via `listItemTypes()`, filters items by `item_type_id`, DataTable with toggle/search/pagination |
+| `pages/catalog/BundleFormPage.tsx` | NEW — Create mode: local `PendingComponent[]` + batch submit; Edit mode: embeds `BundleComponentsTab`; auto-SKU toggle; live ≥2 qty validation |
+| `components/layout/MainLayout.tsx` | +`RedeemIcon`; Bundles MenuItem under Catalog SubMenu |
+| `App.tsx` | +3 routes: `/catalog/bundles`, `/catalog/bundles/new`, `/catalog/bundles/:id/edit` |
+
+### UX decisions
+- **Auto-generate SKU** is a toggle — reactive, read-only while enabled; clears back to editable on disable
+- **Qty indicator** has three states (green/amber/neutral) so operator always knows how far they are from the minimum
+- **Batch create submission** — item is created first, then components are added in a loop; on any component failure the bundle item still exists and operator is redirected to edit mode to add remaining components
+- **Bundle type ID lookup** — resolved once on mount, cached in state; if "Bundle" type not found in seed, a configuration error state is shown with remediation instructions
+
+---
+
+## [PRE-ALPHA v0.5.20 | 2026-03-04 10:00] — Bundle SKU Frontend UI
+
+**What changed:** Frontend Phase 4 of the Bundle SKU module — BOM management on the Item Form, Bundle ATP Lookup on the Inventory Levels page, and bundle fulfillment support in the Record Movement modal.
+
+**Why:** Closes the bundle SKU feature loop started in v0.5.17–v0.5.19. Warehouse operators need a UI to manage Bill-of-Materials for bundle products, look up live bundle ATP without raw API calls, and record a bundle sale that deducts all component stocks atomically in a single operation.
+
+### Files created/modified
+
+| File | Change |
+|------|--------|
+| `api/base_types/items.ts` | +5 bundle types (BundleComponentRead/Create/Update, BundleATPRead, BundleMembershipRead) |
+| `api/base/items.ts` | +6 bundle API functions |
+| `api/base_types/warehouse.ts` | +`reserved_quantity` on enriched level; +4 fulfillment types |
+| `api/base/warehouse.ts` | +3 fulfillment API functions (reserveStock, releaseStock, fulfillBundle) |
+| `pages/items/BundleComponentsTab.tsx` | NEW — BOM editor: search items, add/toggle/remove components |
+| `pages/items/ItemFormPage.tsx` | Tab strip (Details / Bundle Components) when item_type = "Bundle" in edit mode |
+| `pages/warehouse/InventoryLevelsPage.tsx` | Collapsible Bundle ATP Lookup card; Qty column now shows reserved_quantity |
+| `pages/warehouse/InventoryMovementsPage.tsx` | Bundle mode selector when Bundle item selected; fulfill path calls POST /warehouse/fulfill/bundle |
+
+### UX decisions
+- **Tab strip** in ItemFormPage only renders in edit mode (bundle must already exist before BOM can be managed)
+- **BundleATPLookup** filters item search client-side for `item_type.name === "Bundle"` — avoids new backend endpoint
+- **Auto-switch to fulfill mode** — when a Bundle item is selected in the movement modal, fulfill mode is pre-selected; operator can override to manual if needed
+- **Inline confirm-remove** pattern on BundleComponentsTab rows — avoids modal overhead for a simple destructive action
+
+---
+
+## [PRE-ALPHA v0.5.17–v0.5.19 | 2026-03-04 01:00] — Bundle SKU Backend (Frontend Phase Pending)
+
+**What changed:** Backend-only release. Bundle SKU schema, services, and API are complete. Frontend (v0.5.20) completed in the next entry.
+
+---
+
+## [PRE-ALPHA v0.5.12 | 2026-03-03 21:00] — Warehouse & Inventory Frontend Module
+
+**What changed:** Built the complete warehouse/inventory frontend module — 4 new pages, shared components, TypeScript types, API functions, sidebar navigation, and routing.
+
+**Why:** The warehouse backend was functional but had no frontend surface. This release gives operations staff a full UI for managing warehouses, monitoring stock levels with color-coded status, recording movements (inbound/outbound/transfer), and resolving inventory alerts.
+
+### New Pages (all in `src/pages/warehouse/`)
+
+1. **WarehouseListPage** (`/inventory/warehouses`) — CRUD list with inline create/edit modal, active status toggle, search, click-through to stock levels
+2. **InventoryLevelsPage** (`/inventory/levels`) — Real-time stock matrix with warehouse selector, summary chips (counts by status), status filter tabs (All/OK/Low/Critical/Out of Stock/Overstock), search by item name or SKU
+3. **InventoryMovementsPage** (`/inventory/movements`) — Movement history table with Record Movement modal (movement type, item autocomplete, multi-location transactions for transfers, reference number, notes)
+4. **InventoryAlertsPage** (`/inventory/alerts`) — Alert action center with resolve modal, unresolved/all/resolved filter, summary chips per alert type
+
+### Shared Page Components (in `src/pages/warehouse/`)
+
+- **StockStatusBadge** — Color-coded badge (green OK, yellow Low, orange/red Critical, red Out of Stock, blue Overstock)
+- **WarehouseSelector** — Dropdown that loads active warehouses on mount, used across Levels/Movements/Alerts pages
+
+### API Layer
+
+| File | Contents |
+|------|----------|
+| `src/api/base_types/warehouse.ts` | 13 TypeScript interfaces: `WarehouseRead/Create/Update`, `InventoryLocationRead`, `LocationSummary`, `InventoryLevelEnrichedRead`, `StockStatus`, `InventoryAlertRead`, `AlertType`, `MovementTypeRead`, `InventoryMovementRead`, `InventoryTransactionCreate`, `InventoryMovementCreate` |
+| `src/api/base/warehouse.ts` | 11 API functions: `listWarehouses`, `getWarehouse`, `createWarehouse`, `updateWarehouse`, `listLocations`, `listInventoryLevels`, `listAlerts`, `resolveAlert`, `listMovementTypes`, `listMovements`, `createMovement` |
+
+### Navigation
+
+- Added **Inventory** submenu to `MainLayout.tsx` sidebar with 4 items: Warehouses, Stock Levels, Movements, Alerts
+- Added 4 routes to `App.tsx`
+
+### Files Modified / Created
+
+| File | Action |
+|------|--------|
+| `frontend/src/api/base_types/warehouse.ts` | Created |
+| `frontend/src/api/base/warehouse.ts` | Created |
+| `frontend/src/pages/warehouse/StockStatusBadge.tsx` | Created |
+| `frontend/src/pages/warehouse/WarehouseSelector.tsx` | Created |
+| `frontend/src/pages/warehouse/WarehouseListPage.tsx` | Created |
+| `frontend/src/pages/warehouse/InventoryLevelsPage.tsx` | Created |
+| `frontend/src/pages/warehouse/InventoryMovementsPage.tsx` | Created |
+| `frontend/src/pages/warehouse/InventoryAlertsPage.tsx` | Created |
+| `frontend/src/App.tsx` | Modified — added 4 inventory routes |
+| `frontend/src/components/layout/MainLayout.tsx` | Modified — added Inventory submenu + 4 icon imports |
+
+---
+
+## [PRE-ALPHA v0.5.11 | 2026-03-03 16:00] — Items Mass Upload
+
+**What changed:** Implemented an end-to-end mass upload feature for the Items catalog. Users can upload a CSV or Excel file containing multiple items, preview the first 5 rows client-side (via SheetJS), confirm, and have the backend validate and insert all valid rows in one request. Per-row errors are reported back without aborting the entire batch.
+
+**Why:** Manually creating hundreds of items one-by-one is impractical. A mass upload tool with client-side preview and clear per-row error feedback improves the data-entry experience significantly for operations staff.
+
+### Key Features
+
+1. **Client-side parse & preview** — SheetJS (`xlsx`) reads the uploaded file in the browser, extracts the first sheet, and renders the first 5 rows in a preview table before any network call is made. This lets users catch gross formatting errors instantly.
+2. **Drag-and-drop dropzone** — Drop zone accepts `.csv`, `.xlsx`, `.xls` via `ondragover`/`ondrop`. Hidden `<input type="file">` handles click-to-select.
+3. **Template download** — "Download CSV Template" generates a Blob in-browser (no server call) with the correct column headers and triggers a programmatic download.
+4. **Client-side validation** — Extension whitelist, non-empty file, max 10 MB — all checked before the request is sent.
+5. **Confirm & Upload flow** — "Upload Items" button appears below the preview. Reverts to dropzone via "Cancel".
+6. **Per-row error table** — After upload, shows success count + a table (Row | Master SKU | Error) for every failed row. "Upload Another File" resets the UI.
+7. **Backend column normalisation** — `parser.py` maps common header aliases (e.g. `"Product Name"` → `item_name`, `"Internal CODE"` → `master_sku`, `"BaseUOM"` → `uom`) so files from external sources work without manual header renaming.
+8. **FK resolution & duplicate detection** — `validator.py` builds in-memory caches (one SELECT per lookup table) and checks for duplicate `master_sku` both within the file and against existing DB rows.
+9. **Batch insert** — `importer.py` inserts all valid rows in a single flush; errors do not prevent valid rows from being saved.
+
+### Files Modified / Created
+
+| File | Action |
+|------|--------|
+| `backend/app/schemas/items.py` | Added `ImportRowError`, `ImportResult` schemas |
+| `backend/app/services/items_import/__init__.py` | Created (empty package marker) |
+| `backend/app/services/items_import/parser.py` | Created — CSV/Excel parser with alias normalisation |
+| `backend/app/services/items_import/validator.py` | Created — FK cache, duplicate check, `is_active` parse |
+| `backend/app/services/items_import/importer.py` | Created — orchestrates parse → validate → bulk insert |
+| `backend/app/routers/items.py` | Added `POST /import` endpoint |
+| `frontend/src/api/base_types/items.ts` | Added `ImportRowError`, `ItemsImportResult` types |
+| `frontend/src/api/base/items.ts` | Added `importItems(file)` API function |
+| `frontend/src/pages/items/ItemsMassUploadPage.tsx` | Created — full upload page with drag-drop, preview, result |
+| `frontend/src/App.tsx` | Added `/catalog/items/upload` route |
+| `frontend/src/pages/items/ItemsListPage.tsx` | Wired "Mass Upload" button to navigate to upload page; fixed icon import |
+
+### npm Dependency Added
+
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `xlsx` | ^0.18.5 | SheetJS — client-side CSV/Excel parsing for preview |
+
+---
+
 ## [PRE-ALPHA v0.5.10 | 2026-03-03 14:00] — Create Item: Toggle Switch, Validation & Backend Integrity
 
 **What changed:** Replaced the Status `<select>` with a CSS toggle switch, tightened client-side validation on `master_sku` (no-spaces rule) and `sku_name` (max 500), standardized all select placeholders to "Select", removed the string-to-bool coercion hack from `onSubmit`, and added `disabled:cursor-not-allowed` to the submit button.

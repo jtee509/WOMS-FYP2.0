@@ -1,0 +1,20 @@
+/* Location management two-column layout */
+
+.location-tree-panel {
+  flex: 0 0 320px;
+  min-width: 240px;
+  height: 620px;    /* fixed height so flex-grow inside can scroll */
+  overflow: hidden; /* do NOT scroll the panel — inner div scrolls */
+}
+
+.location-content-panel {
+  min-width: 0; /* prevent flex overflow on content side */
+}
+
+@media (max-width: 1023px) {
+  .location-tree-panel {
+    flex: none;
+    width: 100%;
+    height: 400px;
+  }
+}

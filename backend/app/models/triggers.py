@@ -21,6 +21,9 @@ Triggers defined:
   6. sync_order_detail_return_status — sync return_status back to order_details
   7. calculate_exchange_value_difference — auto-compute value_difference
   8. calculate_price_adjustment_final  — auto-compute final_amount
+  9. generate_location_display_code — concatenate location hierarchy into display_code
+ 10. insert_items_history_on_create — audit trail: auto-INSERT into items_history on new item
+ 11. insert_items_history_on_update — audit trail: capture old state on UPDATE (incl. soft-delete)
 """
 
 from sqlalchemy import text
@@ -371,6 +374,186 @@ _TRIGGER_SQL: list[str] = [
         BEFORE INSERT OR UPDATE ON order_price_adjustments
         FOR EACH ROW
         EXECUTE FUNCTION calculate_price_adjustment_final()
+    """,
+
+    # -------------------------------------------------------------------------
+    # 9. GENERATE LOCATION DISPLAY CODE — fires BEFORE INSERT on inventory_location
+    #
+    # WHY: The Python property `full_location_code` only works in-memory.
+    # A persisted `display_code` column enables SQL-level WHERE / ORDER BY
+    # on the human-readable location address (e.g. "A1-Z1-A01-R5-B12").
+    #
+    # Uses CONCAT_WS('-', ...) which skips NULLs automatically, and NULLIF
+    # to treat empty strings as NULL so they are also skipped.
+    # -------------------------------------------------------------------------
+    """
+    CREATE OR REPLACE FUNCTION generate_location_display_code()
+    RETURNS TRIGGER AS $$
+    BEGIN
+        NEW.display_code = CONCAT_WS(
+            '-',
+            NULLIF(NEW.section, ''),
+            NULLIF(NEW.zone, ''),
+            NULLIF(NEW.aisle, ''),
+            NULLIF(NEW.rack, ''),
+            NULLIF(NEW.bin, '')
+        );
+        RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql
+    """,
+
+    "DROP TRIGGER IF EXISTS trg_generate_display_code ON inventory_location",
+    """
+    CREATE TRIGGER trg_generate_display_code
+        BEFORE INSERT ON inventory_location
+        FOR EACH ROW
+        EXECUTE FUNCTION generate_location_display_code()
+    """,
+
+    # -------------------------------------------------------------------------
+    # 10. ITEMS HISTORY AUDIT TRAIL — fires AFTER INSERT on items
+    #
+    # WHY: Ensures every new item (including bundles) gets an automatic
+    # audit trail record in items_history with operation = 'INSERT'.
+    # The snapshot_data captures the full initial state of the new item.
+    # -------------------------------------------------------------------------
+    """
+    CREATE OR REPLACE FUNCTION insert_items_history_on_create()
+    RETURNS TRIGGER AS $$
+    BEGIN
+        INSERT INTO items_history (
+            reference_id,
+            timestamp,
+            changed_by_user_id,
+            operation,
+            snapshot_data
+        )
+        VALUES (
+            NEW.item_id,
+            NOW(),
+            NULL,
+            'INSERT',
+            jsonb_build_object(
+                'item_name',      NEW.item_name,
+                'master_sku',     NEW.master_sku,
+                'sku_name',       NEW.sku_name,
+                'item_type_id',   NEW.item_type_id,
+                'category_id',    NEW.category_id,
+                'brand_id',       NEW.brand_id,
+                'uom_id',         NEW.uom_id,
+                'is_active',      NEW.is_active,
+                'has_variation',  NEW.has_variation,
+                'parent_id',      NEW.parent_id,
+                'image_url',      NEW.image_url
+            )
+        );
+        RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql
+    """,
+
+    "DROP TRIGGER IF EXISTS trg_items_history_on_insert ON items",
+    """
+    CREATE TRIGGER trg_items_history_on_insert
+        AFTER INSERT ON items
+        FOR EACH ROW
+        EXECUTE FUNCTION insert_items_history_on_create()
+    """,
+
+    # -------------------------------------------------------------------------
+    # 11. ITEMS HISTORY AUDIT TRAIL — fires AFTER UPDATE on items
+    #
+    # WHY: Captures the old (pre-update) state in items_history every time an
+    # item row is modified.  This covers:
+    #   - Metadata edits (name, SKU, brand, category, etc.)
+    #   - Soft-delete (deleted_at set → operation = 'SOFT_DELETE')
+    #   - Restore  (deleted_at cleared → operation = 'RESTORE')
+    #   - Any other column change (operation = 'UPDATE')
+    #
+    # The snapshot_data stores the NEW values at top level and the OLD
+    # (pre-change) values under the "previous_values" key, so the full
+    # before/after picture is in a single JSONB document.
+    # -------------------------------------------------------------------------
+    """
+    CREATE OR REPLACE FUNCTION insert_items_history_on_update()
+    RETURNS TRIGGER AS $$
+    DECLARE
+        v_operation VARCHAR(20);
+        v_snapshot  JSONB;
+    BEGIN
+        -- Determine the operation type
+        IF OLD.deleted_at IS NULL AND NEW.deleted_at IS NOT NULL THEN
+            v_operation := 'SOFT_DELETE';
+        ELSIF OLD.deleted_at IS NOT NULL AND NEW.deleted_at IS NULL THEN
+            v_operation := 'RESTORE';
+        ELSE
+            v_operation := 'UPDATE';
+        END IF;
+
+        -- Build snapshot: new values at top level, old values nested
+        v_snapshot := jsonb_build_object(
+            'item_name',      NEW.item_name,
+            'master_sku',     NEW.master_sku,
+            'sku_name',       NEW.sku_name,
+            'item_type_id',   NEW.item_type_id,
+            'category_id',    NEW.category_id,
+            'brand_id',       NEW.brand_id,
+            'uom_id',         NEW.uom_id,
+            'is_active',      NEW.is_active,
+            'has_variation',  NEW.has_variation,
+            'parent_id',      NEW.parent_id,
+            'image_url',      NEW.image_url,
+            'deleted_at',     NEW.deleted_at,
+            'deleted_by',     NEW.deleted_by,
+            'previous_values', jsonb_build_object(
+                'item_name',      OLD.item_name,
+                'master_sku',     OLD.master_sku,
+                'sku_name',       OLD.sku_name,
+                'item_type_id',   OLD.item_type_id,
+                'category_id',    OLD.category_id,
+                'brand_id',       OLD.brand_id,
+                'uom_id',         OLD.uom_id,
+                'is_active',      OLD.is_active,
+                'has_variation',  OLD.has_variation,
+                'parent_id',      OLD.parent_id,
+                'image_url',      OLD.image_url,
+                'deleted_at',     OLD.deleted_at,
+                'deleted_by',     OLD.deleted_by
+            )
+        );
+
+        -- Resolve user ID: prefer session variable (set by app layer),
+        -- fall back to deleted_by for soft-delete/restore operations.
+        INSERT INTO items_history (
+            reference_id,
+            timestamp,
+            changed_by_user_id,
+            operation,
+            snapshot_data
+        )
+        VALUES (
+            NEW.item_id,
+            NOW(),
+            COALESCE(
+                NULLIF(current_setting('app.current_user_id', true), '')::INTEGER,
+                NEW.deleted_by
+            ),
+            v_operation,
+            v_snapshot
+        );
+
+        RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql
+    """,
+
+    "DROP TRIGGER IF EXISTS trg_items_history_on_update ON items",
+    """
+    CREATE TRIGGER trg_items_history_on_update
+        AFTER UPDATE ON items
+        FOR EACH ROW
+        EXECUTE FUNCTION insert_items_history_on_update()
     """,
 ]
 

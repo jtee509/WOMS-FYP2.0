@@ -122,7 +122,7 @@ async def create_order(
     order_data = body.model_dump(exclude={"details"})
 
     if order_data.get("order_date") is None:
-        order_data["order_date"] = datetime.now(timezone.utc)
+        order_data["order_date"] = datetime.now(timezone.utc).replace(tzinfo=None)
 
     order = Order(**order_data)
     session.add(order)
@@ -161,7 +161,7 @@ async def update_order(
     update_data = body.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(order, key, value)
-    order.updated_at = datetime.now(timezone.utc)
+    order.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
     await session.flush()
 
@@ -201,7 +201,7 @@ async def update_order_detail(
     update_data = body.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(detail, key, value)
-    detail.updated_at = datetime.now(timezone.utc)
+    detail.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
     await session.flush()
     await session.refresh(detail)

@@ -41,6 +41,12 @@
   --color-info-bg: #E1F5FE;
   --color-info-text: #01579B;
 
+  /* ---- Dashboard Accents ---- */
+  --color-accent-teal: #0D9488;
+  --color-accent-teal-dark: #0F766E;
+  --color-chart-pink: #E91E63;
+  --color-sidebar-active-bg: #EBF5FF;
+
   /* ---- Login Page ---- */
   --color-login-bg: #1A1A2E;
   --color-login-panel: #16213E;
@@ -167,4 +173,20 @@
   margin-top: 4px;
   min-height: 1.25rem;
   font-family: var(--font-sans);
+}
+
+/* ==========================================================================
+   Dashboard — Gradient backgrounds
+   ========================================================================== */
+
+.stat-card-gradient {
+  background: linear-gradient(135deg, var(--color-accent-teal) 0%, var(--color-accent-teal-dark) 100%);
+}
+
+.btn-gradient-coral {
+  background: linear-gradient(135deg, var(--color-secondary) 0%, var(--color-secondary-dark) 100%);
+}
+
+.btn-gradient-coral:hover {
+  filter: brightness(0.9);
 }

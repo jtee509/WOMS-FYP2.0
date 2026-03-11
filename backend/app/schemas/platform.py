@@ -21,6 +21,7 @@ class PlatformCreate(BaseModel):
     postcode: Optional[str] = Field(None, max_length=20)
     api_endpoint: Optional[str] = Field(None, max_length=500)
     is_active: bool = True
+    is_online: bool = True
 
 
 class PlatformUpdate(BaseModel):
@@ -30,6 +31,7 @@ class PlatformUpdate(BaseModel):
     postcode: Optional[str] = Field(None, max_length=20)
     api_endpoint: Optional[str] = Field(None, max_length=500)
     is_active: Optional[bool] = None
+    is_online: Optional[bool] = None
 
 
 class PlatformRead(BaseModel):
@@ -40,6 +42,7 @@ class PlatformRead(BaseModel):
     postcode: Optional[str] = None
     api_endpoint: Optional[str] = None
     is_active: bool
+    is_online: bool
     created_at: datetime
 
 

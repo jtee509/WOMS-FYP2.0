@@ -3,7 +3,7 @@ WOMS Items Module Models
 
 This module contains all item-related models:
 - Item: Main product/item entity with variations support
-- Status: Item status lookup (Active, Inactive, Discontinued, etc.)
+- Status: Item status lookup (kept for reference, no longer FK'd from Item)
 - ItemType: Item type classification
 - Category: Product categories
 - Brand: Brand/manufacturer information
@@ -14,7 +14,7 @@ This module contains all item-related models:
 from datetime import datetime
 from typing import Optional, List, Dict, Any, TYPE_CHECKING
 from sqlmodel import SQLModel, Field, Relationship, Column
-from sqlalchemy import Index, Text, JSON, text
+from sqlalchemy import Index, Text, JSON, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 
 if TYPE_CHECKING:
@@ -36,21 +36,23 @@ class Status(SQLModel, table=True):
     status_id: Optional[int] = Field(default=None, primary_key=True)
     status_name: str = Field(max_length=100, unique=True, index=True)
     
-    # Relationships
-    items: List["Item"] = Relationship(back_populates="status")
 
 
 class ItemType(SQLModel, table=True):
     """
     Item type classification.
-    
+
     Examples: Raw Material, Finished Good, Component, Packaging, etc.
     """
     __tablename__ = "item_type"
-    
+    __table_args__ = (
+        Index("idx_item_type_not_deleted", "item_type_id", postgresql_where=text("deleted_at IS NULL")),
+    )
+
     item_type_id: Optional[int] = Field(default=None, primary_key=True)
     item_type_name: str = Field(max_length=100, unique=True, index=True)
-    
+    deleted_at: Optional[datetime] = Field(default=None)
+
     # Relationships
     items: List["Item"] = Relationship(back_populates="item_type")
 
@@ -58,14 +60,18 @@ class ItemType(SQLModel, table=True):
 class Category(SQLModel, table=True):
     """
     Product category classification.
-    
+
     Examples: Electronics, Clothing, Food & Beverage, etc.
     """
     __tablename__ = "category"
-    
+    __table_args__ = (
+        Index("idx_category_not_deleted", "category_id", postgresql_where=text("deleted_at IS NULL")),
+    )
+
     category_id: Optional[int] = Field(default=None, primary_key=True)
     category_name: str = Field(max_length=100, unique=True, index=True)
-    
+    deleted_at: Optional[datetime] = Field(default=None)
+
     # Relationships
     items: List["Item"] = Relationship(back_populates="category")
 
@@ -75,10 +81,14 @@ class Brand(SQLModel, table=True):
     Brand/manufacturer information.
     """
     __tablename__ = "brand"
-    
+    __table_args__ = (
+        Index("idx_brand_not_deleted", "brand_id", postgresql_where=text("deleted_at IS NULL")),
+    )
+
     brand_id: Optional[int] = Field(default=None, primary_key=True)
     brand_name: str = Field(max_length=200, unique=True, index=True)
-    
+    deleted_at: Optional[datetime] = Field(default=None)
+
     # Relationships
     items: List["Item"] = Relationship(back_populates="brand")
 
@@ -86,14 +96,18 @@ class Brand(SQLModel, table=True):
 class BaseUOM(SQLModel, table=True):
     """
     Base Unit of Measure definitions.
-    
+
     Examples: Each, Box, Carton, Kg, Liter, etc.
     """
     __tablename__ = "base_uom"
-    
+    __table_args__ = (
+        Index("idx_base_uom_not_deleted", "uom_id", postgresql_where=text("deleted_at IS NULL")),
+    )
+
     uom_id: Optional[int] = Field(default=None, primary_key=True)
     uom_name: str = Field(max_length=50, unique=True, index=True)
-    
+    deleted_at: Optional[datetime] = Field(default=None)
+
     # Relationships
     items: List["Item"] = Relationship(back_populates="uom")
 
@@ -138,18 +152,17 @@ class Item(SQLModel, table=True):
     item_name: str = Field(max_length=500, index=True)
     master_sku: str = Field(max_length=100, unique=True, index=True)
     sku_name: Optional[str] = Field(default=None, max_length=500)
-    product_number: Optional[int] = Field(
-        default=None,
-        description="Product family number from Excel No. column",
-    )
     description: Optional[str] = Field(default=None, sa_column=Column(Text))
-    
+    image_url: Optional[str] = Field(default=None, max_length=500, description="URL/path to main product image")
+
     # Foreign Keys to Lookups
     uom_id: Optional[int] = Field(default=None, foreign_key="base_uom.uom_id")
     brand_id: Optional[int] = Field(default=None, foreign_key="brand.brand_id")
-    status_id: Optional[int] = Field(default=None, foreign_key="status.status_id")
     item_type_id: Optional[int] = Field(default=None, foreign_key="item_type.item_type_id")
     category_id: Optional[int] = Field(default=None, foreign_key="category.category_id")
+
+    # Active flag (replaces old status_id FK)
+    is_active: bool = Field(default=True, index=True)
     
     # Variation Support
     has_variation: bool = Field(default=False)
@@ -177,7 +190,6 @@ class Item(SQLModel, table=True):
     # Relationships
     uom: Optional[BaseUOM] = Relationship(back_populates="items")
     brand: Optional[Brand] = Relationship(back_populates="items")
-    status: Optional[Status] = Relationship(back_populates="items")
     item_type: Optional[ItemType] = Relationship(back_populates="items")
     category: Optional[Category] = Relationship(back_populates="items")
     
@@ -264,3 +276,4 @@ class ItemsHistory(SQLModel, table=True):
     
     # Relationships
     item: Optional[Item] = Relationship(back_populates="history_records")
+

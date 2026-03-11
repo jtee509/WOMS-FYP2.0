@@ -33,12 +33,15 @@ router = APIRouter()
 @router.get("/platforms", response_model=list[PlatformRead])
 async def list_platforms(
     is_active: bool | None = Query(None),
+    is_online: bool | None = Query(None),
     session: AsyncSession = Depends(get_session),
 ):
-    """List all platforms. Optionally filter by active status."""
+    """List all platforms. Optionally filter by active status or online/offline type."""
     query = select(Platform).order_by(Platform.platform_id)
     if is_active is not None:
         query = query.where(Platform.is_active == is_active)
+    if is_online is not None:
+        query = query.where(Platform.is_online == is_online)
     result = await session.execute(query)
     return [
         PlatformRead(
@@ -48,6 +51,7 @@ async def list_platforms(
             postcode=p.postcode,
             api_endpoint=p.api_endpoint,
             is_active=p.is_active,
+            is_online=p.is_online,
             created_at=p.created_at,
         )
         for p in result.scalars().all()
@@ -70,6 +74,7 @@ async def get_platform(
         postcode=platform.postcode,
         api_endpoint=platform.api_endpoint,
         is_active=platform.is_active,
+        is_online=platform.is_online,
         created_at=platform.created_at,
     )
 
@@ -92,6 +97,7 @@ async def create_platform(
         postcode=platform.postcode,
         api_endpoint=platform.api_endpoint,
         is_active=platform.is_active,
+        is_online=platform.is_online,
         created_at=platform.created_at,
     )
 
@@ -121,6 +127,7 @@ async def update_platform(
         postcode=platform.postcode,
         api_endpoint=platform.api_endpoint,
         is_active=platform.is_active,
+        is_online=platform.is_online,
         created_at=platform.created_at,
     )
 
@@ -248,6 +255,7 @@ def _seller_to_read(s: Seller) -> SellerRead:
             postcode=s.platform.postcode,
             api_endpoint=s.platform.api_endpoint,
             is_active=s.platform.is_active,
+            is_online=s.platform.is_online,
             created_at=s.platform.created_at,
         ) if s.platform else None,
     )
