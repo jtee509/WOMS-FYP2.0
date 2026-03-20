@@ -1,7 +1,7 @@
 # Planning Document: Warehouse Location Management (Frontend)
 **Module:** Settings → Warehouse → Location Management
 **Status:** Implemented (v0.5.40)
-**Author:** Claude Code (retrospective — created 2026-03-09)
+**Author:** jtee509 (retrospective — created 2026-03-09)
 
 ---
 

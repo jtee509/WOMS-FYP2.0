@@ -17,7 +17,7 @@ supersedes: docs/planning_phase/Backend/07_bundle_sku_inventory_plan.plan.md
 **Target versions:** PRE-ALPHA v0.5.50+
 **Created:** 2026-03-09
 **Supersedes:** `07_bundle_sku_inventory_plan.plan.md` (v0.5.17–v0.5.27, now removed)
-**Status:** PLANNING
+**Status:** IMPLEMENTED (v0.9.0, 2026-03-18) — Extended with variation-level component support (`variation_sku` field on `bundle_components`)
 
 ---
 

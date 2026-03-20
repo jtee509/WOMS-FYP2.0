@@ -21,6 +21,773 @@ Format: `[PRE-ALPHA vX.Y.Z | YYYY-MM-DD HH:MM] — Brief title`
 
 ---
 
+## [PRE-ALPHA v0.11.0 | 2026-03-25] — Enhanced Stock-In Verification: Print → Scan → Reconcile
+
+**What changed:**
+
+Added full serialized item verification workflow to the Stock In (receiving) module. For items marked `is_serialized=true`, the receiving process now follows a Print → Scan → Reconcile loop instead of simple quantity counting: (1) Print labels generates unique StockLot barcodes with `pending_verification` status, (2) scanning each barcode transitions it to `verified`, (3) reconciliation gates session completion until all printed labels are accounted for.
+
+### New Components
+- `PrintLabelsModal.tsx` — Modal to generate N labels with quantity + location; displays barcodes for printing via `window.print()`
+- `VoidScanModal.tsx` — Void a specific StockLot with mandatory reason selection (predefined list + custom)
+- `ReconciliationPanel.tsx` — Per-line breakdown: printed / verified / pending (missing) / voided; auto-shown for sessions with serialized items
+- `StockLotTable.tsx` — Expandable table of individual StockLot rows with status badges, timestamps, and void action; filterable by verification status
+- `SerialScanFeedback.tsx` — Auto-dismissing success/duplicate/voided/error feedback after each serial scan
+
+### New Types (`receiving.ts`)
+- `StockLotRead`, `VerificationStatus`, `PrintLabelsRequest/Response`, `SerialScanResponse`, `VoidScanRequest`, `ReconciliationLine`, `ReconciliationReport`
+- Added `is_serialized` to `ReceivingLineRead` and `ReceivingScanResponse`
+
+### New API Functions (`receiving.ts`)
+- `printLabels()`, `scanSerialBarcode()`, `voidStockLot()`, `getReconciliation()`, `listSessionLots()`
+
+### Modified Components
+- **`StockInPanel.tsx`** — Serialized lines show "Print" + "Lots" buttons instead of "Edit Count"; qty field disabled; serial scan feedback banner; reconciliation panel auto-rendered when session has serialized lines
+- **`MovementItemRow.tsx`** — Quantity input disabled (grayed out) for serialized items with tooltip; `is_serialized` propagated from item selection
+- **`MovementItemEntry`** type — Added optional `is_serialized` field
+
+### Why
+The previous workflow treated label printing as stock-in, causing inaccurate inventory for serialized items. This separates intent (print = "Pending Arrival") from action (scan = stock increase), blocks duplicate scans, requires void with reason instead of delete, and ensures only verified units count toward available stock.
+
+---
+
+## [PRE-ALPHA v0.10.0 | 2026-03-23] — Variation-Level Inventory Tracking & Barcode Resolution
+
+**What changed:**
+
+Added `variation_sku` and `variation_label` fields across all inventory-related frontend types to support per-variation stock tracking. Added `BarcodeResolution` type and `resolveBarcode()` API function for universal barcode lookup (item + SKU + variation barcode). Updated all `EMPTY_ENTRY` initializers and `MovementItemEntry` construction in 7 component files.
+
+### New Types / API
+- `api/base_types/items.ts` — `BarcodeResolution` interface (item_id, item_name, master_sku, barcode, variation_sku, variation_label, is_variation)
+- `api/base/items.ts` — `resolveBarcode(barcode)` function
+
+### Modified Types
+- `api/base_types/warehouse.ts` — InventoryLevelEnrichedRead, MovementLineItem, MovementItemEntry, StockCheckLineRead, LocationSlotCreate/Read (all +variation_sku/label)
+- `api/base_types/transfer.ts` — TransferLineCreate, TransferLineRead (+variation_sku/label)
+- `api/base_types/receiving.ts` — ReceivingLineRead, ReceivingScanResponse (+variation_sku/label)
+- `api/base_types/disposal.ts` — DisposalRequestCreate, DisposalApprovalRead (+variation_sku/label)
+
+### Modified Components
+- `MovementItemGrid.tsx`, `RecordMovementDrawer.tsx`, `InterWarehousePanel.tsx`, `ConditionPanel.tsx`, `CourierPanel.tsx` — updated EMPTY_ENTRY with variation fields
+- `MovementItemRow.tsx` — onUpdate calls include variation_sku/label
+- `hooks/useMovementStateMachine.ts` — MovementEntry + initial entry include variation fields
+
+**Why:** Foundation for per-variation inventory. All types are now variation-aware; component UI for variation selection will follow in Phase 7 (Barcode Search & Scanning Enhancement).
+
+---
+
+## [PRE-ALPHA v0.9.7 | 2026-03-22] — Inter-Warehouse Transfer Enhancements
+
+**What changed:**
+
+Added packing confirmation gate, per-line discrepancy reasons, printable Transfer Order, incoming transfer schedule, and full transfer detail page with status timeline.
+
+### New Files
+- `pages/warehouse/inventory/transfers/TransferDetailPage.tsx` + `.css` — Full detail page with status timeline (Draft→Packed→Shipped→Received→Completed), lines table, action buttons (Ship, Receive, Cancel, Print TO), notes section, discrepancy report
+- `pages/warehouse/inventory/transfers/PackingConfirmationStep.tsx` — Inline checklist card; all items must be checked to enable confirm button; optional packing notes
+- `pages/warehouse/inventory/transfers/TransferPrintView.tsx` + `.css` — Printable Transfer Order with barcode (react-barcode), warehouse addresses, lines table with empty "Received" column for hand-writing, signature lines, @media print CSS
+- `pages/warehouse/inventory/transfers/TransferDiscrepancyReport.tsx` — Structured discrepancy report table from JSONB snapshot; shows delta, status badges, human-readable reason labels
+- `pages/warehouse/inventory/transfers/ReceiverSchedulePage.tsx` — Incoming transfer schedule for selected warehouse; DataTable with reference, from warehouse, status, shipped date, View/Receive actions
+
+### Modified Files
+- `pages/warehouse/inventory/TransferReceiptPage.tsx` — Added per-line discrepancy reason dropdowns (TRANSFER_DISCREPANCY_REASONS) for mismatched lines + receiver_notes textarea; passes discrepancy_reason per line in verifyTransfer and receiver_notes in completeTransfer
+- `pages/warehouse/inventory/movements/InterWarehousePanel.tsx` — Added View button (→ detail page), Pack action for unpacked drafts, packing confirmed icon indicator on status badges
+- `App.tsx` — Added 3 routes: `/inventory/transfers/:id` (TransferDetailPage), `/inventory/transfers/:id/print` (TransferPrintView), `/inventory/incoming` (ReceiverSchedulePage)
+
+### API Changes
+- `api/base_types/transfer.ts` — Added TRANSFER_DISCREPANCY_REASONS, TRANSFER_DISCREPANCY_LABELS, TransferPackingConfirmRequest, TransferPrintData; updated read interfaces with packing/discrepancy fields
+- `api/base/transfer.ts` — Added confirmPacking(), getTransferPrintData(), getIncomingSchedule()
+
+### Dependencies
+- `react-barcode` — barcode rendering for Transfer Order print view
+
+**Why:** Shipping without packing confirmation risked short-shipments. Free-text-only discrepancy notes prevented root-cause analysis. The printable Transfer Order creates a physical paper trail for warehouse operations. The incoming schedule gives receiving staff advance visibility of inbound transfers.
+
+---
+
+## [PRE-ALPHA v0.9.6 | 2026-03-21] — Ghost Inventory: Found Item Capture & Resolution in Stock Checks
+
+**What changed:**
+
+Added ghost inventory support to the stock check workflow. During physical counting, staff can now capture "found items" — inventory discovered at a location with no corresponding system record — via a slide-down form with item search, location picker, quantity, and notes. Ghost lines appear with distinctive amber styling (background + left border + "Found Item" badge) in the counting table. During reconciliation, a dedicated Ghost Inventory Resolution Panel lists all unresolved ghost items with per-line action selectors (Create Record / Flag for Review / Dispose). The "Adjust Inventory" button is blocked until all ghost items are resolved, matching the 409 ghost gate on the backend.
+
+### New Files
+- `frontend/src/pages/warehouse/inventory/stock_check/editor/GhostItemEntryForm.tsx` — Item search (debounced, 300ms) + location dropdown + quantity + notes; amber-themed dashed-border form; calls `captureGhostItems()` API
+- `frontend/src/pages/warehouse/inventory/stock_check/editor/GhostItemBanner.tsx` — Inline amber badge for ghost lines showing "Found Item" label, found location code, resolution status, and truncated notes
+- `frontend/src/pages/warehouse/inventory/stock_check/reconciliation/GhostItemActionSelect.tsx` — Styled dropdown with 3 options: Create Record (green), Flag for Review (amber), Dispose (red)
+- `frontend/src/pages/warehouse/inventory/stock_check/reconciliation/GhostInventoryResolutionPanel.tsx` — Resolution table with progress indicator, batch resolve button, and all-resolved success banner
+
+### Modified Files
+- `frontend/src/api/base_types/warehouse.ts` — Added `GhostResolution` type, `GhostItemCapture`, `GhostItemBatchCapture`, `GhostResolutionAction`, `GhostResolutionBatch` interfaces; updated `StockCheckLineRead` with ghost fields
+- `frontend/src/api/base/warehouse.ts` — Added `captureGhostItems()`, `resolveGhostItems()` API functions
+- `frontend/src/pages/warehouse/inventory/stock_check/editor/EditorPage.tsx` — "Found Item" button in toolbar; `GhostItemEntryForm` slide-down on toggle; ghost lines get amber bg + left border + `GhostItemBanner` in item cell
+- `frontend/src/pages/warehouse/inventory/stock_check/manager/ReconciliationPage.tsx` — `GhostInventoryResolutionPanel` above adjustment table; `hasUnresolvedGhosts` check blocks "Adjust Inventory" button; priority warning message for unresolved ghosts
+
+---
+
+## [PRE-ALPHA v0.9.5 | 2026-03-20] — Stock In Enhancements: Source Types, Unexpected Items, Discrepancy Gate
+
+**What changed:**
+
+Enhanced the inbound receiving workflow with three capabilities: (1) **Source type selector** — operators now choose whether an inbound session is a Supplier Shipment, Customer Return, or Inter-Warehouse Transfer at creation time, with color-coded toggle buttons. (2) **Unexpected item tracking** — items found during receiving that weren't on the expected manifest are flagged with an amber "Unexpected" badge in the lines table. (3) **Discrepancy resolution gate** — when a session has discrepancies (short/over/missing) or unexpected items, the "Complete" action returns a 409 error which triggers a modal where operators must acknowledge the discrepancies with resolution notes before the system allows completion.
+
+### New Files
+- `frontend/src/pages/warehouse/inventory/movements/StockInSourceSelector.tsx` — Toggle button group: Supplier Shipment (blue), Customer Return (amber), Inter-Warehouse (purple)
+- `frontend/src/pages/warehouse/inventory/movements/DiscrepancyReportModal.tsx` — Full-screen modal with summary cards (matched/short/over/missing counts), discrepancy lines table, resolution notes textarea, accept & resolve action
+
+### Modified Files
+- `frontend/src/api/base_types/receiving.ts` — Added `ReceivingSourceType`, `UnexpectedLineCreate`, `DiscrepancyReportCreate`; updated session/line read/create types with new fields
+- `frontend/src/api/base/receiving.ts` — Added `createUnexpectedLine()`, `submitDiscrepancyReport()` API functions
+- `frontend/src/pages/warehouse/inventory/movements/StockInPanel.tsx` — Integrated source selector in create form; source type badge in detail header; "Source" column in list; unexpected badge on lines; 409 catch opens discrepancy modal; `showDiscrepancyModal` state
+
+---
+
+## [PRE-ALPHA v0.9.3 | 2026-03-18] — Stock Location Management (Functional Zones + Occupancy Grid)
+
+**What changed:**
+
+Added visual occupancy grid and server-side functional zone configuration. The occupancy grid provides a card-based overview of all warehouse bins with color-coded status badges (Empty/Reserved/Occupied/Full). Clicking a bin opens a slot management drawer where operators can view, assign, and remove item-to-location assignments. FunctionalZoneConfig was migrated from localStorage to the backend API.
+
+### New Files
+- `frontend/src/pages/warehouse/inventory/shared/LocationOccupancyBadge.tsx` — Badge component with 4 statuses
+- `frontend/src/pages/warehouse/locations/LocationOccupancyGrid.tsx` — Card grid with filter tabs + search + click-to-open
+- `frontend/src/pages/warehouse/locations/LocationSlotDrawer.tsx` — Slide-over panel for slot CRUD
+
+### Modified Files
+- `frontend/src/api/base_types/warehouse.ts` — Added `FunctionalZoneConfigCreate`, `FunctionalZoneConfigRead`, `OccupancyStatus`, `LocationOccupancyRead`
+- `frontend/src/api/base/warehouse.ts` — Added `listFunctionalZones()`, `upsertFunctionalZones()`, `getLocationOccupancy()`
+- `frontend/src/pages/warehouse/inventory/allocation/FunctionalZoneConfig.tsx` — Migrated from localStorage to API
+- `frontend/src/pages/warehouse/locations/LocationAllocationPage.tsx` — Added "Visual Grid" view mode tab
+
+---
+
+## [PRE-ALPHA v0.9.2 | 2026-03-18] — Disposal Module (Remove Stock Approval Workflow)
+
+**What changed:**
+
+Full-stack implementation of the Disposal module — a two-step approval workflow for stock write-offs (damaged, expired, quality failure, obsolete, contaminated). Staff creates a disposal request, a manager approves or rejects (with optional quantity adjustment), and approved requests are executed to permanently remove stock via Write Off movements.
+
+### New Files
+- `frontend/src/api/base_types/disposal.ts` — TypeScript interfaces: `DisposalStatus`, `DisposalReason`, `DisposalRequestCreate`, `DisposalApproveAction`, `DisposalApprovalRead`
+- `frontend/src/api/base/disposal.ts` — 7 API functions (create, list, getPending, getDetail, approve, execute, cancel)
+- `frontend/src/pages/warehouse/inventory/disposal/DisposalListPage.tsx` — Main list page with DataTable, status filter tabs, pagination, live badge counts
+- `frontend/src/pages/warehouse/inventory/disposal/DisposalRequestForm.tsx` — Create form with item search (debounced), location selector, quantity, reason dropdown, notes
+- `frontend/src/pages/warehouse/inventory/disposal/DisposalDetailPage.tsx` — Detail view with audit trail, approve/reject/execute/cancel actions, qty edit on approval, reject modal
+
+### Modified Files
+- `frontend/src/pages/warehouse/inventory/shared/UnifiedStatusBadge.tsx` — Added `disposal` domain with 5 statuses (pending_approval, approved, rejected, disposed, cancelled)
+- `frontend/src/pages/warehouse/inventory/operations/OperationsLandingPage.tsx` — Added "Remove Stock (Disposal)" card with live pending count badge
+- `frontend/src/App.tsx` — 3 new routes: `/inventory/operations/disposal`, `/inventory/operations/disposal/new`, `/inventory/operations/disposal/:id`
+
+### Routes
+| Path | Component | Description |
+|------|-----------|-------------|
+| `/inventory/operations/disposal` | DisposalListPage | Disposal list with filters |
+| `/inventory/operations/disposal/new` | DisposalRequestForm | Create new disposal request |
+| `/inventory/operations/disposal/:id` | DisposalDetailPage | Detail + actions |
+
+---
+
+## [PRE-ALPHA v0.9.1 | 2026-03-18] — Stock In: Document Upload + Quick Stock-In Form
+
+**What changed:**
+
+Added two capabilities to the Stock In workflow: (1) document upload/management for receiving sessions and inventory movements, and (2) a Quick Stock In form for ad-hoc inbound stock recording without the full session lifecycle.
+
+### New Files
+- `frontend/src/pages/warehouse/inventory/movements/DocumentUploadZone.tsx` — Drag-drop file upload component (any type, 10MB limit, dual pending/attached modes)
+- `frontend/src/pages/warehouse/inventory/movements/QuickStockInForm.tsx` — Simple stock-in form (location picker, item search + quantity table, document upload, uses existing movements/v2 Receipt endpoint)
+
+### Modified Files
+- `frontend/src/api/base_types/receiving.ts` — Added `ReceivingDocumentRead` interface; updated `ReceivingSessionDetailRead` to include `documents`
+- `frontend/src/api/base/receiving.ts` — Added 5 document API functions (uploadSessionDocument, uploadMovementDocument, listSessionDocuments, listMovementDocuments, deleteReceivingDocument)
+- `frontend/src/pages/warehouse/inventory/movements/StockInPanel.tsx` — Added `'quick'` view, "Quick Stock In" button in list header, DocumentUploadZone in session detail view, document upload/delete handlers, item line picker on create form (search + expected quantity table, sends `lines` to `ReceivingSessionCreate`)
+
+### API Integration
+- Document upload uses `multipart/form-data` via FormData
+- Quick stock-in reuses `POST /warehouse/movements/v2` (Receipt type) — no new stock logic, just a frontend convenience form
+- After movement creation, pending documents are uploaded to the movement
+
+---
+
+## [PRE-ALPHA v0.9.0 | 2026-03-18] — Bundle v2: Platform Decoupling + Variation-Level Components
+
+**What changed:**
+
+Complete rewrite of the Bundle module. Bundles are now platform-independent (no `platform_id`/`seller_id` required) and support variation-level components. A bundle component can reference either a whole item (`variation_sku: null`) or a specific variation within an item's JSONB (`variation_sku: "TSHIRT-RED-M"`). Orphaned variations (removed from parent item after bundle creation) are detected at read time and flagged in the UI.
+
+### New Files
+- `backend/app/models/items.py` — `BundleComponent` SQLModel class with `variation_sku`, `quantity`, `sort_order`
+- `backend/alembic/versions/20260318_0000_00_q2r3s4t5u6v7_create_bundle_components_with_variations.py` — Migration creating `bundle_components` table
+
+### Modified Files (Backend)
+- `backend/app/models/__init__.py` — Registered `BundleComponent` import
+- `backend/app/schemas/items.py` — Added variation fields to `BundleComponentInput`, `BundleComponentRead`; removed `platform_id`/`seller_id` from `BundleCreateRequest`; removed `listing_id`/`platform_sku` from `BundleReadResponse`
+- `backend/app/routers/items.py` — Rewrote all 7 bundle endpoints to use `BundleComponent` instead of `PlatformSKU`/`ListingComponent`; added `_resolve_variation_info()`, `_build_components_read()`, `_validate_components()` helpers
+- `backend/app/services/items_import/bundle_importer.py` — Updated to insert `BundleComponent` rows directly (removed platform/seller resolution)
+
+### Modified Files (Frontend)
+- `frontend/src/api/base_types/items.ts` — Updated `BundleComponentInput`, `BundleComponentRead`, `BundleCreateRequest`, `BundleReadResponse` types
+- `frontend/src/pages/bundles/ComponentSearch.tsx` — Complete rewrite with inline variation picker; `excludeIds` → `excludeKeys` (composite `item_id:variation_sku`); exported `makeExcludeKey()` helper
+- `frontend/src/pages/bundles/ComponentList.tsx` — Shows variation label beneath item name, variation barcode, orphaned warning badge
+- `frontend/src/pages/bundles/BundleFormPage.tsx` — Handles `variation_sku` in add/edit; composite exclusion keys; removed `_existingListingId` state
+- `frontend/src/pages/bundles/BundlesListPage.tsx` — Expanded rows show variation label, variation SKU, variation barcode, orphaned warning
+- `frontend/src/pages/items/ItemsListPage.tsx` — Expanded component rows show variation details + barcode column
+
+### Key Design Decisions
+- **Variation reference by SKU**: Most stable identifier — unlike combo indexes (brittle on reorder) or value arrays (break on rename)
+- **Orphan detection at read time**: Rather than blocking item updates, orphaned variations are flagged with `orphaned: true` and shown as warnings in the UI
+- **UNIQUE constraint**: `(bundle_item_id, component_item_id, variation_sku)` with `NULLS NOT DISTINCT` — same item can appear as both whole-item and specific variation(s)
+
+---
+
+## [PRE-ALPHA v0.8.2 | 2026-03-16] — Inventory UX Simplification: 6 Nav Items → 3
+
+**What changed:**
+
+Simplified the entire inventory section from 6 sidebar nav items to 3 (Stock Overview, Operations, Stock Checks). Configuration pages (Allocation Rules, Alert Triggers, Data Export) moved to a new Settings → Inventory tab. All features preserved — no deletions.
+
+### New Files
+- `frontend/src/pages/warehouse/inventory/StockOverviewPage.tsx` — Unified dashboard: stock levels + alerts + activity timeline (3 collapsible sections)
+- `frontend/src/pages/warehouse/inventory/operations/OperationsLandingPage.tsx` — Card-grid launcher for 4 operations with live count badges
+- `frontend/src/pages/warehouse/inventory/operations/StockInPage.tsx` — Page shell wrapping StockInPanel
+- `frontend/src/pages/warehouse/inventory/operations/StockOutPage.tsx` — Page shell wrapping StockOutPanel
+- `frontend/src/pages/warehouse/inventory/operations/TransfersPage.tsx` — Page shell wrapping InterWarehousePanel + MovementHistoryTable
+- `frontend/src/pages/warehouse/inventory/operations/AdjustmentsPage.tsx` — Page shell wrapping AdjustmentsPanel + MovementHistoryTable
+- `frontend/src/pages/settings/InventorySettingsTab.tsx` — Settings tab with Allocation, Triggers, Export accordions
+
+### Modified Files
+- `frontend/src/components/layout/nav.config.tsx` — Inventory: 6 children → 3 (Stock Overview, Operations, Stock Checks)
+- `frontend/src/App.tsx` — 8 new routes, 8 legacy redirects, updated imports
+- `frontend/src/pages/settings/SettingsPage.tsx` — Added 'inventory' tab + useSearchParams for ?tab= URL support
+
+### Routing Changes
+| Old Route | New Route / Redirect |
+|-----------|---------------------|
+| `/inventory/levels` | → `/inventory` (Stock Overview) |
+| `/inventory/movements` | → `/inventory/operations` (Operations Landing) |
+| `/inventory/stock-check` | → `/inventory/stock-checks` |
+| `/inventory/allocation` | → `/settings?tab=inventory` |
+| `/inventory/triggers` | → `/settings?tab=inventory` |
+| `/inventory/analytics` | → `/settings?tab=inventory` |
+
+---
+
+## [PRE-ALPHA v0.8.1 | 2026-03-16] — Inventory Workflow Restructure: Inbound/Outbound
+
+**What changed:**
+
+Restructured the Movement Hub from generic transaction types (Inter-Warehouse, Intra-Warehouse, Courier/Shipping, Condition-Based) to workflow-aligned tabs matching real warehouse operations: **Stock In**, **Stock Out**, Inter-Warehouse, **Adjustments**. Added backend ReceivingSession model for inbound goods verification. Fixed the 422 React crash bug.
+
+### New Files
+- `frontend/src/pages/warehouse/inventory/movements/StockInPanel.tsx` — Inbound receiving workflow (session list → create → barcode scan → count → complete)
+- `frontend/src/pages/warehouse/inventory/movements/StockOutPanel.tsx` — Outbound fulfillment (pending orders → pick list → stock verification → ship)
+- `frontend/src/pages/warehouse/inventory/movements/AdjustmentsPanel.tsx` — Merged bin-to-bin + condition adjustments with mode toggle
+- `frontend/src/api/base_types/receiving.ts` — TypeScript types for receiving API
+- `frontend/src/api/base/receiving.ts` — API functions for receiving endpoints
+
+### Modified Files
+- `frontend/src/pages/warehouse/inventory/movements/MovementHubPage.tsx` — New tab config (stock_in, stock_out, inter_warehouse, adjustments)
+- `frontend/src/pages/warehouse/inventory/hooks/useMovementStateMachine.ts` — Updated MovementCategory type
+- `frontend/src/pages/warehouse/inventory/shared/UnifiedStatusBadge.tsx` — Added receiving + receiving_line domains
+- `frontend/src/api/base/client.ts` — Fixed 422 error normalization (Pydantic validation objects → readable string)
+
+### Backend (new)
+- `backend/app/models/receiving.py` — ReceivingSession, ReceivingLine models
+- `backend/app/schemas/receiving.py` — Pydantic schemas
+- `backend/app/routers/receiving.py` — 10 REST endpoints (CRUD + lifecycle + barcode scan + discrepancy report)
+- `backend/alembic/versions/20260316_0100_00_..._add_receiving_session_tables.py` — Migration
+
+### Why
+The previous tab structure was developer-centric (organized by data flow type) rather than user-centric (organized by business process). The user's actual workflow is:
+1. **Inbound**: Goods arrive → verify against expected list → scan barcodes → record stock in → items live in system
+2. **Outbound**: Orders received → pick list → verify stock → minus stock → ship
+
+This restructure aligns the UI with those two core processes.
+
+---
+
+## [PRE-ALPHA v0.8.0 | 2026-03-16] — Stock Check (Cycle Count) V2 — Full Redo
+
+**What changed:**
+
+Complete redo of the stock check module — decomposed the monolithic 935-line `StockCheckDetailPage` into a status-driven shell with 3 role-specific sub-pages, added re-count workflow, persisted multi-level approvals, manual inventory adjustments, and full audit trail.
+
+### New Files
+
+**Shell & Shared:**
+- `pages/warehouse/inventory/stock_check/StockCheckDetailShell.tsx` — Route component: fetches data, renders DraftView / EditorPage / ApproverPage / ReconciliationPage / ArchiveView based on status
+- `pages/warehouse/inventory/stock_check/StockCheckDetailShell.css` — Focus mode styles
+- `pages/warehouse/inventory/stock_check/shared/ConfirmationModal.tsx` — Reusable dangerous-action confirmation with danger/warning/info variants
+- `pages/warehouse/inventory/stock_check/shared/VarianceFooterBar.tsx` — Sticky footer with real-time totals (counted/total, variance count, surplus/shortage/net)
+- `pages/warehouse/inventory/stock_check/shared/LineHistoryDrawer.tsx` — Per-line audit trail slide-out with timeline view
+
+**Editor (Counter's Workspace):**
+- `pages/warehouse/inventory/stock_check/editor/EditorPage.tsx` — Barcode scanning, progressive disclosure, blind count mode, guided count mode (one-item-at-a-time cards), re-count mode (flagged lines only, blind), focus mode, section filtering, audio feedback, save/submit
+- `pages/warehouse/inventory/stock_check/editor/DiscrepancyReasonSelect.tsx` — Dropdown with human-readable reason code labels
+- `pages/warehouse/inventory/stock_check/editor/RecountBanner.tsx` — Purple banner for re-count mode
+
+**Approver (Review Portal):**
+- `pages/warehouse/inventory/stock_check/approver/ApproverPage.tsx` — Exception-first filter, approval chain panel (L1/L2/L3 from DB), cost impact column, bulk actions (approve zero-variance, flag for re-count), line history drawer
+
+**Manager (Reconciliation):**
+- `pages/warehouse/inventory/stock_check/manager/ReconciliationPage.tsx` — Per-line final_accepted_qty + discrepancy reason (required for non-zero), summary panel (inbound/outbound/net), confirmation checkbox + modal, two-step API (reconcileLines → adjustInventory)
+
+### Modified Files
+- `pages/warehouse/inventory/shared/UnifiedStatusBadge.tsx` — Added `recount_requested` status (purple)
+- `pages/warehouse/inventory/StockCheckListPage.tsx` — Added `recount_requested` status tab, `blind_count_enabled` toggle in create modal, Mode column in table
+- `App.tsx` — Route `/inventory/stock-check/:id` now points to `StockCheckDetailShell`
+- `api/base_types/warehouse.ts` — 12+ new interfaces/types for V2 (approvals, history, thresholds, recount, reconcile)
+- `api/base/warehouse.ts` — 8 new API functions (submitApproval, requestRecount, submitRecounts, reconcileLines, adjustInventory, getStockCheckHistory, getThresholdConfig, updateThresholdConfig)
+
+**Why:** The original stock check page was a single monolithic component handling counter, approver, and manager workflows with no re-count support, no persisted approvals, no audit trail, no structured discrepancy reasons, and auto-reconciliation without manager verification. This redo provides professional-grade cycle count functionality with role separation, data integrity (blind counts, progressive disclosure), and full traceability.
+
+---
+
+## [PRE-ALPHA v0.7.1 | 2026-03-16] — Variation Barcodes + Bundle Component Barcode Display
+
+**What changed:**
+
+Extended barcode support to item variations and bundle component displays.
+
+- `VariationBuilder.types.ts`: Added `barcode: string | null` to `VariationCombination` interface
+- `VariationBuilder.utils.ts`: Updated `syncCombinations()` and `migrateOldFormat()` to handle barcode field
+- `VariationBuilder.tsx`: Added read-only Barcode column in CombinationTable — shows monospace barcode or "Auto-generated" placeholder
+- `base_types/items.ts`: Added `barcode: string | null` to `BundleComponentRead` interface
+- `BundlesListPage.tsx`: Added Barcode column in expanded component rows
+- `BundleFormPage.tsx`: Passes barcode from API response and search results to ComponentList
+- `ComponentList.tsx`: Added `barcode` to `ComponentRow` interface + Barcode column in table
+
+**Why:** Variation combinations needed individual barcodes for warehouse scanning/picking. Bundle component lists needed to show each item's barcode for order fulfillment visibility.
+
+---
+
+## [PRE-ALPHA v0.7.0 | 2026-03-16] — Inventory Management System Overhaul
+
+**What changed:**
+
+Complete architectural overhaul of the inventory management section, transforming disconnected pages into a unified warehouse orchestration system across 7 implementation phases.
+
+### Phase 0 — Foundation (shared hooks & utilities)
+- `useGlobalBarcodeListener` hook: HID keyboard barcode scanner detection via inter-character latency (<50ms for 10+ chars), auto-skip for focused form fields
+- `useMovementStateMachine` hook: typed `useReducer` FSM with states Idle→SelectingType→AddingItems→Reviewing→Submitting→Success→Error
+- `useVirtualizedList` hook: thin wrapper around `react-window` FixedSizeList with scrollToIndex/scrollToBottom
+- `UnifiedStatusBadge`: consolidated status badge component replacing 4+ duplicated STATUS_BADGE maps (supports domains: stock, transfer, stock_check, movement, alert, approval)
+- `extractErrorMessage`: shared error extraction utility (was duplicated in 6+ files)
+- Added `react-window` + `@types/react-window` dependencies
+
+### Phase 1 — Navigation & Route Restructure
+- Sidebar restructured: Stock Levels, Stock Movements (Movement Hub), Reconciliation (Stock Check), Auto-Allocation, Alert Triggers, History & Analytics
+- Removed standalone "Transfers" nav item (absorbed into Movement Hub)
+- Legacy route redirects: `/inventory/transfers` → `/inventory/movements?tab=inter_warehouse`, `/inventory/alerts` → `/inventory/triggers`
+
+### Phase 2 — Movement Hub (unified 4-tab interface)
+- `MovementHubPage`: tabbed interface with URL-driven tab state (`?tab=inter_warehouse`)
+- `InterWarehousePanel`: full IWT management with transfer list, direction/status filters, ship/receive/cancel actions, collapsible create form
+- `IntraWarehousePanel`: 6-phase continuous scan workflow (scan_source→scan_items→scan_destination→review→submit→success), barcode-driven, auto-detects location codes vs item SKUs
+- `CourierPanel`: outbound shipment manifest with multi-select, global action bar (Ship/Cancel Selected), create form
+- `ConditionPanel`: condition type cards (Damaged/Repair/Scrap/Write-Off) with predefined reason codes, photo evidence upload with preview
+- `MovementHistoryTable`: unified movement history with type filter and UnifiedStatusBadge
+
+### Phase 3 — Reconciliation Enhancements
+- `BlindCountToggle`: hides system_quantity and variance columns during counting to prevent bias, persists preference in localStorage
+- `ABCClassBadge`: A/B/C inventory classification badges (A=red/weekly, B=amber/monthly, C=emerald/quarterly) with `computeABCClass()` utility
+- `ApprovalGate`: multi-level approval UI (L1 Supervisor → L2 Manager for net variance ≥10 → L3 Finance for net variance ≥50), approval chain visualization, Approve & Reconcile / Request Re-count buttons
+- `VarianceSummaryPanel`: visual variance summary with positive/negative/net totals, accepted/rejected line counts, grouped by warehouse section
+- `StockCheckDetailPage` integrated: blind count toggle, ABC badges on item cells, variance summary panel + approval gate replace old reconcile modal
+- `StockCheckListPage` enhanced: status filter tabs with counts, replaced duplicated STATUS_BADGE/STATUS_LABEL with UnifiedStatusBadge
+- Both pages now use shared `extractErrorMessage` instead of inline duplicates
+
+### Phase 4 — Auto-Allocation Rule Builder
+- `AllocationRulePage`: 3-tab page (Allocation Rules, Functional Zones, Affinity Slotting)
+- `AllocationRuleBuilder`: trigger-action rule paradigm (triggers: ABC class, item category, weight range, item type; actions: assign zone, assign location, set primary, set max qty), CRUD with enable/disable/duplicate, localStorage persistence
+- `FunctionalZoneConfig`: 6 predefined functional zones (Returns, Shipping, Transit, Golden Zone, Quarantine, Bulk Storage), section/zone mapping via chip toggles
+- `AffinitySlottingPanel`: co-occurrence visualization placeholder with sample data structure (requires backend analysis pipeline)
+
+### Phase 5 — Alert Triggers Configuration
+- `AlertTriggersPage`: two-panel layout (config left, alerts right)
+- `TriggerConfigPanel`: per-item/group threshold config (low stock, critical, overstock, inactivity), scope selection (global/category/item), enable/disable toggles, localStorage persistence
+- `AlertDashboard`: live alert feed from backend API, severity-grouped collapsible sections, quick-resolve with notes input, resolved alerts history toggle
+
+### Phase 6 — History & Analytics
+- `AnalyticsPage`: 3-tab segmented control (Timeline, Trends, Export)
+- `EventTimeline`: unified chronological stream combining movements, stock checks, transfers, and alerts with kind-based filtering, vertical timeline with color-coded dots and UnifiedStatusBadge
+- `TrendCharts`: d3-powered bar chart (movement volume by type) + horizontal bar chart (stock check variance counts), responsive SVG viewBox
+- `DataExportPanel`: CSV export for movements/stock checks/transfers, ML-ready format (ISO 8601 timestamps, quoted fields, UTF-8), last export result indicator
+
+**Why:** The inventory section consisted of disconnected pages with duplicated utility code and inconsistent UX patterns. This overhaul creates a unified, state-machine-driven system with centralized status display, shared utilities, barcode-first workflows, and analytics — preparing the platform for high-throughput warehouse operations.
+
+**New files (33):**
+- `pages/warehouse/inventory/hooks/` — useGlobalBarcodeListener.ts, useMovementStateMachine.ts, useVirtualizedList.ts
+- `pages/warehouse/inventory/shared/` — UnifiedStatusBadge.tsx, extractErrorMessage.ts
+- `pages/warehouse/inventory/movements/` — MovementHubPage.tsx/.css, InterWarehousePanel.tsx, IntraWarehousePanel.tsx, CourierPanel.tsx, ConditionPanel.tsx, MovementHistoryTable.tsx
+- `pages/warehouse/inventory/reconciliation/` — BlindCountToggle.tsx, ABCClassBadge.tsx, ApprovalGate.tsx, VarianceSummaryPanel.tsx
+- `pages/warehouse/inventory/allocation/` — AllocationRulePage.tsx, AllocationRuleBuilder.tsx, FunctionalZoneConfig.tsx, AffinitySlottingPanel.tsx
+- `pages/warehouse/inventory/triggers/` — AlertTriggersPage.tsx (rewritten), TriggerConfigPanel.tsx, AlertDashboard.tsx
+- `pages/warehouse/inventory/analytics/` — AnalyticsPage.tsx (rewritten), EventTimeline.tsx, TrendCharts.tsx, DataExportPanel.tsx
+
+**Modified files:**
+- `App.tsx` — Updated routes for Movement Hub, Allocation, Triggers, Analytics; removed unused imports
+- `nav.config.tsx` — Restructured Inventory sidebar section
+- `StockCheckDetailPage.tsx` — Integrated blind count, ABC badges, variance summary, approval gate
+- `StockCheckListPage.tsx` — Added status filter tabs, shared utilities
+- `package.json` — Added react-window + @types/react-window
+
+---
+
+## [PRE-ALPHA v0.6.5 | 2026-03-16] — Items Barcode Auto-Generation Integration
+
+**What changed:**
+
+1. **Barcode column in ItemsListPage** — Added a "Barcode" column to the items DataTable, positioned after the Item column. Displays the system-generated barcode in monospace text, or "—" when null (no convention active).
+
+2. **Read-only barcode display in ItemFormPage** — In edit mode, when an item has a barcode, a read-only field is shown above the form fields with monospace styling and a "System-generated. Cannot be changed." helper. Hidden in create mode and when barcode is null.
+
+3. **TypeScript type update** — Added `barcode: string | null` to the `ItemRead` interface in `base_types/items.ts`. `BundleListItem` inherits it automatically via `extends ItemRead`.
+
+**Files modified:**
+- `frontend/src/api/base_types/items.ts` — added barcode field to ItemRead
+- `frontend/src/pages/items/ItemsListPage.tsx` — added Barcode column
+- `frontend/src/pages/items/ItemFormPage.tsx` — added barcode state + read-only display
+
+---
+
+## [PRE-ALPHA v0.6.4 | 2026-03-15] — Scan-to-Verify: Inter-Warehouse Transfers + Focus Mode
+
+**What changed:**
+
+1. **Inter-Warehouse Transfer UI** — Added full transfer workflow to the inventory module:
+   - `RecordMovementDrawer` extended: selecting "Inter-Warehouse Transfer" movement type shows a target warehouse picker (instead of destination location), calls `createTransfer()` to create a draft, and displays the generated reference number with a copy button. Stock is NOT deducted at this stage.
+   - New `TransferListPage` (`/inventory/transfers`): paginated list of transfers using DataTable with direction (outgoing/incoming) and status filters. Status-based action buttons: Ship/Cancel for outgoing drafts, Receive for incoming shipped transfers.
+   - New `TransferReceiptPage` (`/inventory/transfers/receive`): two-phase scan-to-verify flow. Phase 1: scan transfer reference barcode to load manifest. Phase 2: scan individual item barcodes with real-time expected-vs-scanned comparison grid. Discrepancy detection with mandatory notes for mismatches.
+   - Supporting components: `VerificationGrid` (expected vs scanned table with delta column), `TransferManifestHeader` (transfer metadata display), `DiscrepancyBadge` (color-coded status pills for matched/short/over/missing/extra).
+
+2. **Stock Check Focus Mode** — Enhanced `StockCheckDetailPage`:
+   - Toggle button (Fullscreen icon) in header, visible only during `in_progress` status
+   - Adds `focus-mode` CSS class to `document.body` → hides sidebar + app header, dark background (#111827), enlarged fonts, high-contrast badges
+   - Audio feedback via Web Audio API: `playSuccess()` on barcode match, `playError()` on no match
+   - Dynamic re-sorting: last scanned item sorts to top, then uncounted, then counted
+   - Progress bar indicator below barcode scanner
+
+3. **API Layer** — New `frontend/src/api/base_types/transfer.ts` (TypeScript interfaces) and `frontend/src/api/base/transfer.ts` (8 API functions: createTransfer, listTransfers, getTransfer, getTransferByReference, shipTransfer, verifyTransfer, completeTransfer, cancelTransfer).
+
+4. **Audio Utility** — `audioFeedback.ts`: Web Audio API with lazy AudioContext creation. `playSuccess()` (800Hz sine, 150ms), `playError()` (200Hz square, 300ms), `playConfirm()` (600Hz sine, 100ms).
+
+5. **Routing & Navigation** — Added routes in `App.tsx` for `/inventory/transfers` and `/inventory/transfers/receive`. Added "Transfers" nav item under Inventory section in `nav.config.tsx` with `LocalShippingIcon`.
+
+**Why:** The warehouse had no mechanism for inter-site stock transfers with manifest verification. Staff needed a way to create transfer drafts, ship them (deducting source stock), and verify receipt at the destination with barcode scanning and discrepancy detection. Focus Mode addresses the need for distraction-free rapid scanning during stock checks.
+
+### New files
+| File | Purpose |
+|------|---------|
+| `src/api/base_types/transfer.ts` | Transfer TypeScript interfaces |
+| `src/api/base/transfer.ts` | 8 transfer API functions |
+| `src/pages/warehouse/inventory/TransferListPage.tsx` | Transfer list/dashboard |
+| `src/pages/warehouse/inventory/TransferReceiptPage.tsx` | Scan-to-verify receipt page |
+| `src/pages/warehouse/inventory/VerificationGrid.tsx` | Expected vs Scanned table |
+| `src/pages/warehouse/inventory/TransferManifestHeader.tsx` | Transfer metadata display |
+| `src/pages/warehouse/inventory/DiscrepancyBadge.tsx` | Status badge component |
+| `src/pages/warehouse/inventory/audioFeedback.ts` | Web Audio beep/buzz utility |
+| `src/pages/warehouse/inventory/StockCheckDetailPage.css` | Focus mode styles |
+
+### Modified files
+| File | Change |
+|------|--------|
+| `src/pages/warehouse/inventory/RecordMovementDrawer.tsx` | Inter-warehouse transfer mode (target warehouse picker, draft creation, reference display) |
+| `src/pages/warehouse/inventory/StockCheckDetailPage.tsx` | Focus mode toggle, audio feedback, dynamic re-sorting, progress bar |
+| `src/App.tsx` | Two new routes for transfers |
+| `src/components/layout/nav.config.tsx` | Transfers nav item under Inventory |
+
+---
+
+## [PRE-ALPHA v0.6.1 | 2026-03-14] — Frontend File Reorganization
+
+**What changed:** Reorganized all frontend page files to be grouped by function in dedicated subfolders under `src/pages/`. Seven root-level pages moved into domain subfolders: `LoginPage` → `pages/auth/`, `DashboardPage` → `pages/dashboard/`, `MLSyncPage` + `ReferencePage` → `pages/data/`, `NotFoundPage` → `pages/errors/`, `PlaceholderPage` → `pages/common/`, `OrderImportPage` → `pages/orders/`. Four dashboard card components (`StatCard`, `OrderOverviewCard`, `PlatformDistributionCard`, `RecentImportsCard`) moved from `components/dashboard/` to `pages/dashboard/` since they are only used by DashboardPage. Split `pages/warehouse/` into two subfolders: `warehouse/locations/` (LocationSetupPage, LocationGeneratorPage, LocationAllocationPage + location_generator/ sub-components) and `warehouse/inventory/` (InventoryLevelsPage, InventoryMovementsPage, InventoryAlertsPage, StockCheckListPage, StockCheckDetailPage, RecordMovementDrawer, MovementItemGrid, MovementItemRow, StockStatusBadge). Deleted 3 orphaned files: `pages/warehouse/WarehouseSelector.tsx`, `pages/warehouse/WarehouseListPage.tsx`, `components/hooks/useD3.ts`. Updated all import paths in App.tsx and all moved files. TypeScript compilation passes cleanly.
+
+**Why:** The project's file organization rule (Ground Rule #7) requires every page and its page-specific sub-components to live inside a dedicated subfolder. Root-level pages violated this rule. The warehouse folder mixed two distinct domains (location management vs inventory operations) making it harder to navigate. Dashboard components in `components/` were only used by one page, violating the shared-only principle for `components/`.
+
+### File structure after reorganization
+```
+pages/
+  auth/LoginPage.tsx
+  dashboard/DashboardPage.tsx, StatCard.tsx, OrderOverviewCard.tsx, PlatformDistributionCard.tsx, RecentImportsCard.tsx
+  data/MLSyncPage.tsx, ReferencePage.tsx
+  errors/NotFoundPage.tsx
+  common/PlaceholderPage.tsx
+  orders/OrderImportPage.tsx (+ existing OrderDetailsPage, MassShipPage, etc.)
+  warehouse/locations/LocationSetupPage.tsx, LocationGeneratorPage.tsx, LocationAllocationPage.tsx, location_generator/...
+  warehouse/inventory/InventoryLevelsPage.tsx, InventoryMovementsPage.tsx, InventoryAlertsPage.tsx, StockCheck*, RecordMovementDrawer.tsx, MovementItem*.tsx, StockStatusBadge.tsx
+  admin/, bundles/, items/, settings/ (unchanged)
+```
+
+---
+
+## [PRE-ALPHA v0.6.0 | 2026-03-14] — Stock Movement Drawer, Stock Check Pages & Location Allocation
+
+**What changed:** Three major warehouse UI features implemented. (1) **Multi-Item Movement Drawer**: Replaced the single-item movement modal in InventoryMovementsPage with a 520px slide-over `RecordMovementDrawer`. The drawer dynamically configures source/destination fields based on movement type (Receipt, Shipment, Transfer, Adjustment, Return, Write Off) via a `TYPE_CONFIG` mapping. Includes a `MovementItemGrid` with dynamic add/remove rows, each powered by `MovementItemRow` — a debounced (300ms) item autocomplete that fetches inventory at the source location for outbound movements or all items for inbound, showing available stock badges and quantity validation. Destination dropdown now shows "(Assigned)" hints for locations with active slot assignments. (2) **Stock Check (Cycle Count) Pages**: `StockCheckListPage` with DataTable pagination, status-colored badges (draft=gray, in_progress=blue, pending_review=amber, completed=green, cancelled=red), create modal with scope filters (section/zone/aisle/bay populated from location data), and row actions (Start/Cancel/View per status). `StockCheckDetailPage` with header info panel (stats chips for lines/counted/variance/dates), inline-editable counting grid (number inputs with blur/enter save, batch "Save All" button), variance review mode with per-line accept/reject toggles + bulk Accept All/Reject All, and reconcile confirmation modal. (3) **Location Allocation Page**: `LocationAllocationPage` with dual view toggle (By Location / By Item). By Location: location dropdown → table of assigned items with capacity utilization bars (green <70%, amber 70-90%, red >90%), primary star icons, edit/remove actions. By Item: debounced search → table of assigned locations. Assign modal with item search + location select + primary/priority/max_qty/notes. Edit modal for updating slot properties. Delete with stock-present blocking.
+
+**Why:** The single-item movement modal was a bottleneck for warehouse staff processing bulk receipts/shipments — each item required a separate form submission. Stock verification had no structured workflow, making it impossible to audit physical vs. system discrepancies. Without location allocation, items could be placed anywhere with no capacity control or designated home locations.
+
+### New files
+| File | Purpose |
+|------|---------|
+| `pages/warehouse/RecordMovementDrawer.tsx` | 520px slide-over drawer for multi-item movements |
+| `pages/warehouse/MovementItemGrid.tsx` | Dynamic item row grid with add/remove |
+| `pages/warehouse/MovementItemRow.tsx` | Item autocomplete with stock lookup |
+| `pages/warehouse/StockCheckListPage.tsx` | Stock check list with DataTable + create modal |
+| `pages/warehouse/StockCheckDetailPage.tsx` | Detail page: counting grid + variance review + reconcile |
+| `pages/warehouse/LocationAllocationPage.tsx` | Dual-view allocation management |
+
+### Modified files
+| File | Change |
+|------|--------|
+| `api/base_types/warehouse.ts` | Added 15+ types: StockCheck*, LocationSlot*, Movement v2 |
+| `api/base/warehouse.ts` | Added 16 API functions for stock-check, slots, capacity |
+| `pages/warehouse/InventoryMovementsPage.tsx` | Replaced modal with RecordMovementDrawer |
+| `App.tsx` | Added routes: /inventory/stock-check, /inventory/stock-check/:id, /inventory/allocation |
+| `components/layout/nav.config.tsx` | Added "Location Allocation" nav item under Inventory |
+
+---
+
+## [PRE-ALPHA v0.5.50 | 2026-03-14] — Unified Location Generator Interface
+
+**What changed:** Complete rewrite of the Site Generator page (`LocationGeneratorPage.tsx`) into a streamlined single-view interface. Left panel is now a pure configuration sidebar (`ConfigPanel`) with checkbox-driven level cards for bulk generation — no splash screen, no Existing/New toggle, no review step. Right panel is a unified editable table (`UnifiedLocationTable`) that shows all locations (saved from DB + staged from generator) in a single view. Features: inline cell editing (transparent inputs with focus ring), row-level trash/undo actions, "Add Row" button per section, real-time duplicate detection with red highlight and warning tooltips, status-based row styling (saved=neutral, staged=blue, edited=amber, deleted=red strikethrough), and a sticky `CommitBar` that appears when pending changes exist. Save All executes sequential API calls: create staged → update edited → soft-delete deleted → refresh. `BulkCreationWizard.tsx` left untouched for `LocationManagementSection` in Settings.
+
+**Why:** The previous design had a split personality — BulkCreationWizard managed its own location tables, edit mode, drawers, and staging in the left panel, while the right panel showed a separate read-only view. This made the workflow disjointed and required users to mentally track state across two panels. The unified interface provides a single source of truth with all editing native to table rows.
+
+### New files
+| File | Purpose |
+|------|---------|
+| `pages/warehouse/location_generator/types.ts` | `UnifiedLocationRow`, `RowStatus`, conversion helpers |
+| `pages/warehouse/location_generator/helpers.ts` | `PreviewLocation`, `locationCode`, generator logic |
+| `pages/warehouse/location_generator/ConfigPanel.tsx` | Left sidebar: level cards + create button |
+| `pages/warehouse/location_generator/SectionAccordion.tsx` | Section accordion with editable rows + actions |
+| `pages/warehouse/location_generator/CommitBar.tsx` | Sticky bottom bar: save/discard + summary |
+| `pages/warehouse/location_generator/UnifiedLocationTable.tsx` | Right panel: filter + stats + accordions |
+
+### Modified files
+| File | Change |
+|------|--------|
+| `pages/warehouse/LocationGeneratorPage.tsx` | Full rewrite: unified state, new component imports |
+
+---
+
+## [PRE-ALPHA v0.7.0 | 2026-03-11] — Order Details & Mass Ship Pages
+
+**What changed:** Built two fully functional pages for the Orders section. **Order Details** (`/orders/details`): paginated order list with DataTable integration, search (debounced), multi-filter bar (platform, store, status, date range), checkbox row selection for bulk actions, and a 680px slide-out `OrderViewDrawer` showing customer/shipping/financial info cards, line items table (SKU extraction from platform_sku_data JSONB), and collapsible raw platform data viewer. Created `OrderStatusBadge`, `FulfillmentStatusBadge`, and `PlatformBadge` components for consistent status/platform rendering across all order views. **Mass Ship** (`/orders/mass-ship`): 3-step wizard — (1) ShipmentSelectionStep with filter+table+checkbox selection, pre-filtered to "processing" orders; (2) TrackingAssignmentStep with editable courier/tracking table, bulk courier assignment, paste-column support, duplicate tracking detection; (3) ReviewConfirmStep with summary cards (totals by platform/courier), manifest table, and confirm button with loading state. Post-submit summary shows success/fail counts and error details. Cross-linked: selecting orders in Order Details and clicking "Ship Selected" navigates to Mass Ship with pre-selection. Backend enhanced: `GET /orders` now JOINs Platform/Seller for platform_name/store_name, aggregates detail_count/total_paid, supports date_from/date_to/assigned_warehouse_id/sort_by/sort_dir params. Added `POST /orders/bulk-ship` endpoint for atomic mass fulfillment.
+
+**Why:** Staff needed a way to browse, search, and inspect orders from the frontend (previously only placeholder pages existed). Mass shipping is a critical daily operation — processing dozens of orders individually is impractical. The 3-step wizard ensures tracking numbers are assigned before shipping, preventing errors. The enriched list endpoint reduces N+1 lookups. The drawer pattern (matching inventory movements) keeps list context visible while inspecting details.
+
+### New files
+| File | Purpose |
+|------|---------|
+| `pages/orders/OrderDetailsPage.tsx` | Order list page with filters, table, drawer |
+| `pages/orders/OrderDetailsPage.css` | Page-specific styles |
+| `pages/orders/OrderViewDrawer.tsx` | Slide-out order detail panel |
+| `pages/orders/OrderViewDrawer.css` | Drawer animation and layout styles |
+| `pages/orders/OrderLineItemsTable.tsx` | Line items sub-table for drawer |
+| `pages/orders/OrderStatusBadge.tsx` | Order status + cancellation badge |
+| `pages/orders/FulfillmentStatusBadge.tsx` | Fulfillment status badge |
+| `pages/orders/PlatformBadge.tsx` | Platform identity badge (SHP/LZD/TIK/MAN) |
+| `pages/orders/OrderFilters.tsx` | Filter bar component |
+| `pages/orders/OrderFilters.css` | Filter bar styles |
+| `pages/orders/MassShipPage.tsx` | Mass ship 3-step wizard |
+| `pages/orders/MassShipPage.css` | Wizard styles |
+| `pages/orders/ShipmentSelectionStep.tsx` | Step 1: select orders |
+| `pages/orders/TrackingAssignmentStep.tsx` | Step 2: assign tracking |
+| `pages/orders/ReviewConfirmStep.tsx` | Step 3: review & confirm |
+
+### Modified files
+| File | Change |
+|------|--------|
+| `api/base_types/orders.ts` | Full order type definitions (status unions, interfaces, payloads) |
+| `api/base/orders.ts` | listOrders, getOrder, updateOrder, updateOrderDetail, bulkShipOrders |
+| `App.tsx` | Registered OrderDetailsPage and MassShipPage routes |
+
+---
+
+## [PRE-ALPHA v0.6.9 | 2026-03-11] — Phase 3 Complete: Inventory Intelligence & Analytics (Steps 3.0–3.7)
+
+**What changed:** Built the complete inventory analytics and intelligence layer. Created `useInventorySync` — a custom hook that invalidates all inventory-related React Query caches (levels, alerts, movements, analytics) after any mutation, ensuring cross-view data consistency. Enhanced `InventoryLevelsPage` with stock-status row colouring (ROW_TINT map: low=yellow, critical=red, out_of_stock=gray, overstock=blue) and `InlineNumberCell` — a click-to-edit component for threshold fields (reorder_point, safety_stock, max_stock) that flashes green on successful save. Added `rowClassName` prop to the shared `DataTable` component for dynamic per-row CSS class injection. Built 4 analytics chart components: `DailyMovementChart` (d3 stacked bar), `MovementTypeBreakdown` (d3 donut with legend), `TopMovedItemsList` (Tailwind ranked list with progress bars), `StockHealthSummary` (d3 donut with centre total). Created `InventoryAnalyticsPage` with a 2x2 chart grid, date-range selector (presets: 7d/30d/90d/YTD/Custom), 3 parallel `useQuery` calls via TanStack React Query, loading skeletons, and empty states. Added "Analytics" nav entry and route under Inventory section. Backend gained 3 analytics endpoints and a PATCH endpoint for inline threshold editing.
+
+**Why:** Phases 1–2 gave staff the tools to record and manage movements, but the system offered no aggregated insights or self-service threshold management. Warehouse operators had to ask a developer to change reorder points, and managers had no charts to spot trends. Inline editing removes the developer bottleneck for threshold changes. The analytics dashboard provides movement trends, item ranking, type distribution, and stock health at a glance — critical for demand planning and spotting operational problems before they escalate.
+
+### New files
+- `frontend/src/pages/warehouse/useInventorySync.ts` — Custom hook: calls `queryClient.invalidateQueries()` for inventory-levels, inventory-alerts, inventory-movements, inventory-analytics keys. Used in RecordMovementDrawer, MovementActionMenu, InventoryAlertsPage to keep all views consistent after mutations.
+- `frontend/src/pages/warehouse/DailyMovementChart.tsx` — d3 stacked bar chart: X-axis = date, Y-axis = movement count, colour-coded by movement type. Responsive SVG with hover tooltips.
+- `frontend/src/pages/warehouse/MovementTypeBreakdown.tsx` — d3 donut chart with percentage legend showing proportion of each movement type (Receipt, Shipment, Transfer, etc.) over the selected date range.
+- `frontend/src/pages/warehouse/TopMovedItemsList.tsx` — Pure Tailwind ranked list: displays top N items by total quantity moved, with relative-width progress bars for visual comparison.
+- `frontend/src/pages/warehouse/StockHealthSummary.tsx` — d3 donut chart: segments coloured to match `StockStatusBadge` palette (healthy=green, low=yellow, critical=red, out_of_stock=gray, overstock=blue); centre label shows total item count.
+- `frontend/src/pages/warehouse/InventoryAnalyticsPage.tsx` — Full analytics dashboard page: 2x2 responsive grid with 4 chart cards, date-range selector with preset buttons (7d, 30d, 90d, YTD, Custom with date inputs), 3 parallel `useQuery` calls (movements-per-day, top-items, stock-health), loading skeletons per card, empty-state messages, warehouse selection guard.
+
+### Modified files
+- `frontend/src/pages/warehouse/InventoryLevelsPage.tsx` — Stock-status row colouring via `rowClassName` prop (ROW_TINT map); `InlineNumberCell` click-to-edit for reorder_point, safety_stock, max_stock with green flash animation on save; integrated `useInventorySync`
+- `frontend/src/components/common/DataTable.tsx` — Added `rowClassName` prop: accepts a function `(row) => string` returning CSS classes for dynamic per-row styling
+- `frontend/src/api/base_types/warehouse.ts` — Added types: `MovementPerDay`, `TopMovedItem`, `StockHealthEntry`, `AnalyticsDateRange`, `InventoryLevelUpdatePayload`
+- `frontend/src/api/base/warehouse.ts` — Added functions: `getMovementsPerDay()`, `getTopItems()`, `getStockHealth()`, `updateInventoryLevel()`
+- `frontend/src/pages/warehouse/RecordMovementDrawer.tsx` — Integrated `useInventorySync` for post-save invalidation
+- `frontend/src/pages/warehouse/MovementActionMenu.tsx` — Integrated `useInventorySync` for post-action invalidation
+- `frontend/src/pages/warehouse/InventoryAlertsPage.tsx` — Integrated `useInventorySync` for post-resolve invalidation
+- `frontend/src/layout/nav.config.tsx` — Added "Analytics" nav entry (BarChartIcon, `/inventory/analytics`) under Inventory section
+- `frontend/src/App.tsx` — Added route: `<Route path="/inventory/analytics" element={<InventoryAnalyticsPage />} />`
+
+### Patterns introduced
+- **useInventorySync hook pattern:** Centralised cache invalidation for all inventory query keys. Any component that mutates inventory data calls `invalidateAll()` from this hook instead of manually invalidating individual keys. This prevents stale data across the levels, alerts, movements, and analytics views.
+- **InlineNumberCell pattern:** Click-to-edit number fields within DataTable rows. Renders as plain text by default; clicking activates a number input. On blur or Enter, PATCHes the backend and shows a green flash animation to confirm the save. Reusable for any numeric field that needs inline editing.
+- **rowClassName dynamic styling:** DataTable now accepts a `rowClassName` function prop, enabling per-row conditional CSS classes based on row data (e.g., colouring rows by stock status).
+- **Parallel useQuery pattern:** InventoryAnalyticsPage fires 3 independent `useQuery` calls simultaneously (movements-per-day, top-items, stock-health), each with its own loading/error state. Charts render independently as data arrives, avoiding waterfall loading.
+
+---
+
+## [PRE-ALPHA v0.6.8 | 2026-03-11] — Phase 2 Complete: MovementActionMenu, Status Tabs, Expandable Rows (Steps 2.7–2.9)
+
+**What changed:** Built `MovementActionMenu` — a contextual kebab dropdown that shows lifecycle actions (approve/complete/cancel) based on the movement's current status, with confirm dialogs before execution and portal rendering to avoid table overflow clipping. Enhanced `InventoryMovementsPage` with status filter tabs (All/Pending/In Transit/Completed/Cancelled), expandable rows (chevron toggle + `MovementExpandedRow` detail panel), a Status column using `MovementStatusBadge`, and an Actions column hosting the new `MovementActionMenu`. Backend `GET /movements` endpoint now accepts an optional `status` query parameter for server-side filtering. Frontend `ListMovementsParams` updated to pass the status filter.
+
+**Why:** Phase 2 completion. Staff could see movement status and details (v0.6.7) but had no way to act on them from the movements list. The action menu lets warehouse operators approve, complete, or cancel movements directly from the table row. Status tabs reduce cognitive load by letting staff focus on one lifecycle stage at a time (e.g., "show me only pending movements that need approval"). Server-side filtering ensures pagination correctness — client-side filtering would break page counts and miss records beyond the current page.
+
+### Files created
+- `frontend/src/pages/warehouse/MovementActionMenu.tsx` — Kebab dropdown with contextual lifecycle actions; confirm dialogs prevent accidental transitions; portal rendering avoids z-index/overflow issues in table rows
+
+### Files modified
+- `frontend/src/pages/warehouse/InventoryMovementsPage.tsx` — Status filter tabs, expandable rows with chevron indicators, Status + Actions columns, status param in data fetching
+- `backend/app/routers/warehouse.py` — `GET /{warehouse_id}/movements` gains optional `status` query parameter (server-side filter)
+- `frontend/src/api/base_types/warehouse.ts` — `ListMovementsParams` gains optional `status` field
+
+---
+
+## [PRE-ALPHA v0.6.7 | 2026-03-11] — Movement Item Detail API + StatusBadge + ExpandedRow (Steps 2.3–2.6)
+
+**What changed:** Added `MovementItemDetail` type and `getMovementItems()` API function to the frontend warehouse module. Built `MovementStatusBadge` — a colored pill component that maps movement status to visual cues (pending=yellow, in_transit=blue, completed=green, cancelled=gray). Built `MovementExpandedRow` — an expandable row component that fetches per-item transaction details via `GET /movements/{id}/items` and renders item name, master SKU, location codes, quantity, and directional arrows for transfers. Includes loading spinner, error state, and empty state handling.
+
+**Why:** The movements table shows one row per movement, but warehouse staff need to see the status at a glance (badge) and drill into movement details (expanded row) to verify which items moved between which locations. These components complete the read-side UX for movement lifecycle — the badge shows where a movement is in the workflow, and the expanded row shows what it contains.
+
+### Backend changes (v0.6.6)
+- `backend/app/schemas/warehouse.py` — `MovementItemDetailRead` schema (item_id, item_name, master_sku, location_from, location_to, quantity, is_inbound)
+- `backend/app/routers/warehouse.py` — `GET /warehouse/movements/{id}/items` endpoint; joins transactions with Item + InventoryLocation; groups transfer outbound/inbound pairs into single rows
+
+### Frontend changes (v0.6.7)
+- `frontend/src/api/base_types/warehouse.ts` — added `MovementItemDetail` interface
+- `frontend/src/api/base/warehouse.ts` — added `getMovementItems(id)` function
+
+### New files
+- `frontend/src/pages/warehouse/MovementStatusBadge.tsx` — Colored pill component: maps `MovementStatus` to background/text color pairs; standalone for reuse in list and detail views
+- `frontend/src/pages/warehouse/MovementExpandedRow.tsx` — Fetches movement items on mount via `getMovementItems(id)`, renders table with item name, SKU, location from/to (with arrow icons for transfers), quantity; loading/error/empty states
+
+---
+
+## [PRE-ALPHA v0.6.5 | 2026-03-11] — Movement Lifecycle Backend + Frontend API (Steps 2.0–2.2)
+
+**What changed:** Added `status` column to `InventoryMovement` model (pending/in_transit/completed/cancelled) with Alembic migration. Movement creation now sets `status="pending"` and defers stock-level updates. Three new lifecycle endpoints: approve (pending→in_transit, deducts outbound stock), complete (in_transit→completed, adds inbound stock), cancel (reverses if needed). Frontend API functions added for all three transitions.
+
+**Why:** The previous flow immediately applied stock changes on movement creation, with no review step. The lifecycle model lets warehouse staff review movements before stock is affected, supports transfer workflows where goods are in transit, and allows cancellation with automatic reversal.
+
+### Backend changes
+- `backend/app/models/warehouse.py` — `status` field on `InventoryMovement` (default "pending")
+- `backend/app/schemas/warehouse.py` — `MovementStatus` literal type, `status` on `InventoryMovementRead`
+- `backend/app/routers/warehouse.py` — `POST /movements` defers stock updates; 3 new `PATCH` lifecycle endpoints; `_build_movement_response` / `_fetch_movement_transactions` helpers
+- `backend/alembic/versions/20260311_1316_add_status_to_inventory_movement.py` — migration adds `status` column + index
+
+### Frontend changes
+- `frontend/src/api/base/warehouse.ts` — `approveMovement()`, `completeMovement()`, `cancelMovement()`
+- `frontend/src/api/base_types/warehouse.ts` — `MovementStatus` type, `status` field on `InventoryMovementRead`
+
+---
+
+## [PRE-ALPHA v0.6.3 | 2026-03-11] — Phase 1 Complete: Drawer Integration (Steps 1.6–1.7)
+
+**What changed:** Replaced the old single-item movement modal in `InventoryMovementsPage` with the new `RecordMovementDrawer`. Removed ~200 lines of modal state, handlers, and JSX. Added a single `drawerOpen` boolean + `<RecordMovementDrawer>` render.
+
+**Why:** Phase 1 completion — the multi-item drawer is now the live UI for recording movements. The old modal was single-item-only and couldn't support multi-item workflows, cross-field validation, or movement-type-aware location visibility.
+
+### Modified files
+- `src/pages/warehouse/InventoryMovementsPage.tsx` — removed modal, added drawer integration
+
+### Removed code (from InventoryMovementsPage)
+- State: `showModal`, `movementTypes`, `locations`, `formTypeId`, `formItemId`, `formItemSearch`, `itemResults`, `formRef`, `formNotes`, `txRows`, `saving`, `formError`
+- Handlers: `openRecord`, `updateTx`, `addTxRow`, `removeTxRow`, `handleSubmit`
+- Effects: movement types fetch, locations fetch, item search autocomplete
+- JSX: entire modal overlay and body
+- Imports: `CloseIcon`, `DeleteIcon`, `createMovement`, `listMovementTypes`, `listLocations`, `listItems`, unused type imports
+
+### Phase 1 summary (all steps)
+| Step | Component | Files |
+|------|-----------|-------|
+| 1.0 | Dependencies | `zod`, `@hookform/resolvers` |
+| 1.1 | Backend `location_id` filter | `warehouse.py`, `warehouse.ts` |
+| 1.2 | Form types + zod schema | `movement.types.ts` |
+| 1.3 | MovementItemRow | `MovementItemRow.tsx`, `.css` |
+| 1.4 | MovementItemGrid | `MovementItemGrid.tsx`, `.css` |
+| 1.5 | RecordMovementDrawer | `RecordMovementDrawer.tsx`, `.css` |
+| 1.6 | Page integration | `InventoryMovementsPage.tsx` |
+| 1.7 | Verification + docs | `tsc --noEmit` passes |
+
+---
+
+## [PRE-ALPHA v0.6.2 | 2026-03-11] — RecordMovementDrawer (Step 1.5)
+
+**What changed:** Built the main slide-over drawer for recording multi-item inventory movements. Wraps metadata fields (type, reference, locations) + `MovementItemGrid` + notes into a right-side panel with form orchestration and submission.
+
+**Why:** The old single-item movement modal couldn't handle multi-item movements. The drawer pattern lets users reference the background table while filling out the form, and movement-type-aware field visibility prevents confusion (e.g. receipts don't ask for a source location).
+
+### New files
+- `src/pages/warehouse/RecordMovementDrawer.tsx` — Drawer with `FormProvider`, movement-type-aware location fields, multi-item submission (1 API call per item), transfer paired transactions, error handling
+- `src/pages/warehouse/RecordMovementDrawer.css` — Backdrop, slide animation (cubic-bezier), header/body/footer, responsive location grid
+
+### Movement type → field visibility
+| Type | Source | Destination |
+|------|--------|-------------|
+| Receipt | hidden | shown |
+| Shipment | shown | hidden |
+| Transfer | shown | shown |
+| Adjustment / Write Off / Cycle Count / Return | shown | hidden |
+
+### Architecture notes
+- Props: `open`, `onClose`, `warehouseId`, `onSuccess`
+- Uses `FormProvider` so child components (`MovementItemGrid`, `MovementItemRow`) can access form context via `useFormContext`
+- `activeLocationId` switches between source/dest depending on type — feeds into grid's inventory search
+- One `POST /warehouse/movements` per item row (backend constraint: single `item_id` per movement)
+- Transfer creates 2 transactions per item (outbound source + inbound dest)
+- Form resets on close; close blocked during submission
+
+---
+
+## [PRE-ALPHA v0.6.1 | 2026-03-11] — Movement Item Row & Grid Components (Steps 1.3–1.4)
+
+**What changed:** Built the two core UI building blocks for the multi-item movement drawer: `MovementItemRow` (per-row product autocomplete + qty + stock badge + remove) and `MovementItemGrid` (dynamic `useFieldArray` table with add/remove).
+
+**Why:** The existing movement modal is single-item only (one movement = one item). The new drawer needs a multi-row item picker with per-row search against inventory levels, stock-aware quantity validation, and duplicate-item prevention — none of which the old modal supports.
+
+### New files
+- `src/pages/warehouse/MovementItemRow.tsx` — Debounced search (300ms) → `listInventoryLevels` with `location_id` filter; selected-item chip with clear button; available stock badge; qty input; remove button; `selectedItemIds` prop disables already-picked items in dropdown
+- `src/pages/warehouse/MovementItemRow.css` — Selected chip, search dropdown, stock badge styles
+- `src/pages/warehouse/MovementItemGrid.tsx` — `useFieldArray` grid with table layout, "Add Item" button, minimum-1-row guard, form-level zod error display
+- `src/pages/warehouse/MovementItemGrid.css` — Table wrapper, thead, dashed add button styles
+
+### Architecture notes
+- Each `MovementItemRow` owns its search state independently (avoids indexed state arrays at grid level)
+- `useWatch` on `items` feeds a memoized `selectedItemIds` Set to all rows for duplicate prevention
+- Components use `useFormContext<MovementFormValues>()` — they must be rendered inside a `<FormProvider>` wrapping a `useForm` with `movementFormResolver`
+
+---
+
+## [PRE-ALPHA v0.6.0 | 2026-03-11] — Inventory Enhancement Phase 1 (Steps 1.0–1.2)
+
+**What changed:** Installed `zod` (v4.3.6) and `@hookform/resolvers` (v5.2.2) for advanced form validation. Added `location_id` filter to the inventory levels API client. Created `movement.types.ts` with TypeScript interfaces and a zod validation schema for the upcoming multi-item movement drawer.
+
+**Why:** The existing single-item movement modal cannot handle multi-item movements efficiently. The new drawer form requires cross-field validation (no duplicate items, source ≠ destination, quantity ≤ current stock) that react-hook-form alone cannot express — zod's `superRefine` solves this.
+
+### New files
+- `src/pages/warehouse/movement.types.ts` — `MovementFormValues`, `MovementItemEntry`, `MovementItemEntryMeta`, zod schema with `superRefine`, `movementFormResolver`, default values
+
+### Modified files
+- `src/api/base/warehouse.ts` — Added `location_id` to `ListInventoryParams`
+- `package.json` — Added `zod`, `@hookform/resolvers`
+
+### Backend changes (supporting)
+- `backend/app/routers/warehouse.py` — `GET /{warehouse_id}/inventory` now accepts optional `location_id` query param; filters to that location with `quantity_available > 0`
+
+---
+
 ## [PRE-ALPHA v0.5.54 | 2026-03-11] — Bundle Mass Upload
 
 **What changed:** Built a full bundle mass upload feature (backend endpoint + frontend page). Users can upload CSV/Excel files where each row is a bundle component. Rows with the same `bundle_sku` are grouped into a single bundle.

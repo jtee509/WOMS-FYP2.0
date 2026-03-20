@@ -5,7 +5,7 @@ Complete database schema documentation for the Warehouse Order Management System
 **Database:** PostgreSQL 13+  
 **ORM:** SQLModel (SQLAlchemy + Pydantic)  
 **Migration Tool:** Alembic  
-**Total Tables:** 46  
+**Total Tables:** 54  
 **Total Views:** 12  
 
 ---
@@ -36,12 +36,12 @@ Complete database schema documentation for the Warehouse Order Management System
 |--------|--------|-------------|
 | **Users** | 4 | Authentication, authorization, action types, audit logging |
 | **Items** | 6 | Product catalog, variations, categories, brands, version history |
-| **Warehouse** | 11 | Physical locations, inventory tracking, alerts, stock management |
+| **Warehouse** | 17 | Physical locations, inventory tracking, alerts, stock management, cycle counts (V2: approvals, thresholds, audit history), location slotting |
 | **Orders** | 10 | Order processing, platform integration, SKU translation, cancellations |
 | **Order Import** | 2 | Lazada/Shopee order uploads, raw copies, staging for normalization |
 | **Order Operations** | 6 | Returns, exchanges, modifications, price adjustments |
 | **Delivery** | 9 | Fleet management, drivers, trips, tracking status |
-| **Total** | **46** | |
+| **Total** | **52** | |
 
 ### Key Features
 
@@ -796,10 +796,38 @@ erDiagram
         varchar500 user_agent "Client user agent"
     }
     
+    refresh_tokens {
+        int id PK "SERIAL PRIMARY KEY"
+        varchar128 token_hash "UNIQUE NOT NULL INDEX - SHA-256"
+        int user_id FK "NOT NULL INDEX"
+        timestamp expires_at "NOT NULL INDEX"
+        timestamp created_at "DEFAULT NOW()"
+        timestamp revoked_at "Nullable"
+        varchar128 replaced_by "Nullable - hash of replacement token"
+    }
+
     roles ||--o{ users : "role_id"
     action_type ||--o{ audit_log : "action_id"
     users ||--o{ audit_log : "changed_by_user_id"
+    users ||--o{ refresh_tokens : "user_id"
 ```
+
+### Table: `refresh_tokens`
+
+Database-backed refresh tokens for persistent authentication sessions. Only the SHA-256 hash of the token is stored; the plaintext is sent to the client once. Supports token rotation and stolen-token detection.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | SERIAL | PK | Auto-increment primary key |
+| `token_hash` | VARCHAR(128) | UNIQUE, NOT NULL, INDEX | SHA-256 hash of the refresh token |
+| `user_id` | INTEGER | FK → users.user_id, NOT NULL, INDEX | Owner of the token |
+| `expires_at` | TIMESTAMP | NOT NULL, INDEX | When the token expires (default: 7 days from creation) |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | When the token was created |
+| `revoked_at` | TIMESTAMP | Nullable | When the token was revoked (NULL = active) |
+| `replaced_by` | VARCHAR(128) | Nullable | Hash of the replacement token (for rotation chain tracking) |
+
+**Indexes:** `idx_refresh_tokens_user_id`, `idx_refresh_tokens_expires_at`, unique index on `token_hash`
+**Migration:** `20260319_0200_00_u6v7w8x9y0z1`
 
 ### Table: `action_type`
 
@@ -1108,6 +1136,29 @@ Version control snapshot for item changes.
 }
 ```
 
+### Table: `bundle_components`
+
+Platform-independent Bill of Materials (BOM) for bundle items. Links a bundle to its component items or specific variations. Replaces the old approach of storing BOM via `PlatformSKU` + `ListingComponent`.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | SERIAL | PRIMARY KEY | Unique identifier |
+| `bundle_item_id` | INTEGER | FK → items.item_id ON DELETE CASCADE, NOT NULL, INDEX | The bundle item |
+| `component_item_id` | INTEGER | FK → items.item_id ON DELETE RESTRICT, NOT NULL, INDEX | The component item |
+| `variation_sku` | VARCHAR(100) | NULLABLE | NULL = whole item; non-NULL = specific variation SKU from `variations_data` |
+| `quantity` | INTEGER | NOT NULL, DEFAULT 1, CHECK (≥ 1) | Quantity of this component in the bundle |
+| `sort_order` | INTEGER | NOT NULL, DEFAULT 0 | Display ordering |
+| `created_at` | TIMESTAMP | NOT NULL, DEFAULT NOW() | Creation timestamp |
+| `updated_at` | TIMESTAMP | NOT NULL, DEFAULT NOW() | Last update timestamp |
+
+**Unique Constraint:** `(bundle_item_id, component_item_id, variation_sku)` — same item+variation pair can only appear once per bundle.
+
+**Key Design:**
+- `ON DELETE CASCADE` on `bundle_item_id` — deleting a bundle removes its BOM rows
+- `ON DELETE RESTRICT` on `component_item_id` — cannot delete an item used as a bundle component
+- When `variation_sku` is NULL, the component references the whole item
+- When `variation_sku` is set, it must match a `sku` value in the component item's `variations_data.combinations[]` JSONB
+
 ---
 
 ## Warehouse Module
@@ -1294,40 +1345,45 @@ INSERT INTO inventory_type (inventory_type_name) VALUES
 
 ### Table: `inventory_location`
 
-Specific location within a warehouse (Section > Zone > Aisle > Rack > Bin).
+Specific location within a warehouse site. Follows the 6-level hierarchy:
+**Warehouse Section → Zone → Aisle → Bay → Level → Position**
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | `id` | SERIAL | PRIMARY KEY | Unique identifier |
-| `warehouse_id` | INTEGER | FK → warehouse.id, NOT NULL, INDEX | Parent warehouse |
-| `section` | VARCHAR(50) | INDEX | Section code |
-| `zone` | VARCHAR(50) | INDEX | Zone code |
-| `aisle` | VARCHAR(50) | INDEX | Aisle code |
-| `rack` | VARCHAR(50) | INDEX | Rack code |
-| `bin` | VARCHAR(50) | INDEX | Bin code |
+| `warehouse_id` | INTEGER | FK → warehouse_site.id, NOT NULL, INDEX | Parent warehouse site |
+| `warehouse_section` | VARCHAR(50) | INDEX | Coarse zone of the site (e.g. "WS1") |
+| `zone` | VARCHAR(50) | INDEX | Temperature/category zone (e.g. "COLD") |
+| `aisle` | VARCHAR(50) | INDEX | Aisle identifier (e.g. "A01") |
+| `bay` | VARCHAR(50) | INDEX | Storage bay within an aisle (e.g. "B3") |
+| `level` | INTEGER | INDEX | Shelf level within a bay (1=bottom, N=top). NULL = not assigned |
+| `position` | INTEGER | INDEX | Slot position within a level (1=leftmost). NULL = not assigned |
 | `inventory_type_id` | INTEGER | FK → inventory_type.inventory_type_id | Location type |
-| `display_code` | VARCHAR(255) | | Auto-generated: "Section-Zone-Aisle-Rack-Bin" (trigger) |
+| `display_code` | VARCHAR(255) | | Auto-generated: "WS1-COLD-A01-B3-2-4" (trigger) |
 | `is_active` | BOOLEAN | DEFAULT TRUE, INDEX | Operational status (FALSE = decommissioned) |
 | `sort_order` | INTEGER | | User-defined pick-path ordering |
+| `max_capacity` | INTEGER | | Total units this location can hold (NULL = unlimited) |
+| `current_utilization` | INTEGER | DEFAULT 0 | Current total units stored at this location |
 | `created_at` | TIMESTAMP | DEFAULT NOW() | Creation timestamp |
 | `deleted_at` | TIMESTAMP | INDEX | Soft-delete marker (NULL = live) |
-| `is_orphan` | BOOLEAN | DEFAULT FALSE, INDEX | Flag for missing hierarchy levels (returned in tree responses) |
 
 **Soft-delete cascade behavior:** When a warehouse is deleted (soft-delete), all child InventoryLocation rows are automatically marked deleted via trigger or application logic. Location-level deletes are guarded by the inventory_guard service — DELETE operations return 409 Conflict if any InventoryLevel has qty_available > 0 OR reserved_qty > 0 in that location.
 
 **Orphan management:** Locations with missing hierarchy levels (e.g., `aisle = NULL` when `zone` is present) are returned from tree endpoints with `is_orphan: true` and display_code "Unassigned". Frontend displays these with italic styling and warning indicator.
 
-
-**Example Location Code:** `A-01-03-R5-B12` (Section A, Zone 01, Aisle 03, Rack 5, Bin 12)
+**Example Location Codes:**
+- `WS1-COLD-A01-B3-2-4` — Section WS1, Zone COLD, Aisle A01, Bay B3, Level 2, Position 4
+- `WS2-A05-B1` — Section WS2, Aisle A05, Bay B1 (zone/level/position not assigned)
+- `B` — Section B only (all other levels not assigned)
 
 **Indexes:**
 | Index | Columns | Type | Purpose |
 |-------|---------|------|---------|
-| `uq_location_address` | `warehouse_id, COALESCE(section,''), COALESCE(zone,''), COALESCE(aisle,''), COALESCE(rack,''), COALESCE(bin,'')` | UNIQUE | Prevent duplicate physical addresses per warehouse |
+| `uq_location_address` | `warehouse_id, COALESCE(warehouse_section,''), COALESCE(zone,''), COALESCE(aisle,''), COALESCE(bay,''), COALESCE(level::text,''), COALESCE(position::text,'')` | UNIQUE | Prevent duplicate physical addresses per warehouse |
 | `idx_inventory_location_active` | `warehouse_id, is_active` (WHERE `is_active = TRUE`) | PARTIAL | Optimise active-location queries |
 | `idx_inventory_location_not_deleted` | `id` (WHERE `deleted_at IS NULL`) | PARTIAL | Optimise live-row queries |
 
-**Trigger:** `trg_generate_display_code` (BEFORE INSERT) — calls `generate_location_display_code()` which concatenates non-null hierarchy segments with hyphen separators via `CONCAT_WS('-', NULLIF(section,''), NULLIF(zone,''), ...)` into `display_code`.
+**Trigger:** `trg_generate_display_code` (BEFORE INSERT) — calls `generate_location_display_code()` which concatenates non-null hierarchy segments with hyphen separators via `CONCAT_WS('-', NULLIF(warehouse_section,''), ..., NULLIF(level::text,''), NULLIF(position::text,''))` into `display_code`.
 
 ---
 
@@ -1350,14 +1406,21 @@ INSERT INTO movement_type (movement_name) VALUES
 
 ### Table: `inventory_movements`
 
-Inventory movement records (groups related transactions).
+Inventory movement records (groups related transactions). Each movement follows a lifecycle: **pending → in_transit → completed** (or **cancelled** from either pending or in_transit). Stock-level mutations are tied to lifecycle transitions, not creation — this ensures inventory accuracy by requiring explicit human approval before stock is affected.
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | `id` | SERIAL | PRIMARY KEY | Unique identifier |
 | `movement_type_id` | INTEGER | FK → movement_type.id, NOT NULL, INDEX | Movement type |
 | `reference_id` | VARCHAR(100) | INDEX | Source document reference |
+| `status` | VARCHAR(20) | NOT NULL, DEFAULT 'completed', INDEX (`ix_inventory_movements_status`) | Lifecycle status: `pending` (created, no stock effect), `in_transit` (approved, outbound stock deducted), `completed` (received, inbound stock added), `cancelled` (reversed if previously in_transit). Default is 'completed' for backward compatibility with pre-lifecycle records. |
 | `created_at` | TIMESTAMP | DEFAULT NOW(), INDEX | Creation timestamp |
+
+**Lifecycle transitions:**
+- `pending → in_transit` (approve): deducts outbound stock from source location
+- `in_transit → completed` (complete): adds inbound stock at destination location
+- `pending → cancelled` (cancel): no stock reversal needed (nothing was deducted)
+- `in_transit → cancelled` (cancel): reverses the outbound stock deduction
 
 ---
 
@@ -2768,6 +2831,259 @@ Identifies bundle listings from `listing_component` using two criteria: (a) list
 
 ---
 
+### Table: `stock_checks`
+
+Stock check (cycle count) session. Lifecycle: **DRAFT → IN_PROGRESS → PENDING_REVIEW → RECOUNT_REQUESTED → COMPLETED / CANCELLED**.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | SERIAL | PRIMARY KEY | Unique identifier |
+| `warehouse_id` | INTEGER | FK → warehouse_site.id, NOT NULL | Target warehouse |
+| `title` | VARCHAR(200) | NOT NULL | Session title |
+| `notes` | TEXT | | Optional notes |
+| `status` | VARCHAR(30) | NOT NULL, DEFAULT 'draft' | Lifecycle status (V2: widened from 20→30 for `recount_requested`) |
+| `scope_filters` | JSONB | | Scope: `{"warehouse_section":"A","zone":"DRY"}` |
+| `total_lines` | INTEGER | DEFAULT 0 | Total lines in check |
+| `lines_counted` | INTEGER | DEFAULT 0 | Lines with counts entered |
+| `lines_with_variance` | INTEGER | DEFAULT 0 | Lines where counted ≠ system |
+| `adjustment_movement_id` | INTEGER | FK → inventory_movements.id | Movement created on reconciliation |
+| `blind_count_enabled` | BOOLEAN | DEFAULT FALSE | V2: Hide system qty from counters to prevent bias |
+| `created_by` | INTEGER | FK → users.user_id, NOT NULL | User who created |
+| `completed_by` | INTEGER | FK → users.user_id | User who completed/cancelled |
+| `recount_requested_by` | INTEGER | FK → users.user_id | V2: Who requested the re-count |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | Creation timestamp |
+| `started_at` | TIMESTAMP | | When check was started |
+| `completed_at` | TIMESTAMP | | When check was completed/cancelled |
+| `recount_requested_at` | TIMESTAMP | | V2: When re-count was last requested |
+
+**Indexes:**
+| Index | Columns | Type | Purpose |
+|-------|---------|------|---------|
+| `idx_stock_checks_warehouse` | `warehouse_id` | BTREE | Filter checks by warehouse |
+| `idx_stock_checks_status` | `status` | BTREE | Filter checks by lifecycle status |
+| `idx_stock_checks_warehouse_status` | `warehouse_id, status` | COMPOSITE | Combined warehouse + status queries |
+| `idx_stock_checks_created` | `created_at` | BTREE | Sort/filter by creation date |
+
+---
+
+### Table: `stock_check_lines`
+
+One line in a stock check: one item at one location. System quantity is snapshotted when the check starts. V2 adds per-line lifecycle, re-count support, structured reason codes, and audit fields.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | SERIAL | PRIMARY KEY | Unique identifier |
+| `stock_check_id` | INTEGER | FK → stock_checks.id, NOT NULL | Parent session |
+| `item_id` | INTEGER | FK → items.item_id, NOT NULL | Item being checked |
+| `location_id` | INTEGER | FK → inventory_location.id, NOT NULL | Location being checked |
+| `system_quantity` | INTEGER | DEFAULT 0 | Snapshot of system qty at start time |
+| `counted_quantity` | INTEGER | | Physical count (NULL = not yet counted) |
+| `variance` | INTEGER | | counted - system (computed on count entry) |
+| `notes` | VARCHAR(500) | | Per-line notes |
+| `is_accepted` | BOOLEAN | DEFAULT TRUE | Accept for reconciliation |
+| `counted_at` | TIMESTAMP | | When count was entered |
+| `first_count` | INTEGER | | V2: Initial physical count |
+| `second_count` | INTEGER | | V2: Re-count value (only if flagged) |
+| `final_accepted_qty` | INTEGER | | V2: Manager's approved final quantity |
+| `discrepancy_reason` | VARCHAR(50) | | V2: Structured reason code (see enum below) |
+| `counted_by` | INTEGER | FK → users.user_id | V2: Who performed initial count |
+| `recounted_by` | INTEGER | FK → users.user_id | V2: Who performed re-count |
+| `is_reconciled` | BOOLEAN | DEFAULT FALSE | V2: TRUE only after inventory adjustment applied |
+| `recount_requested` | BOOLEAN | DEFAULT FALSE | V2: Flagged for re-count by approver |
+| `line_status` | VARCHAR(30) | DEFAULT 'pending' | V2: Per-line lifecycle state |
+| `is_ghost_inventory` | BOOLEAN | DEFAULT FALSE | Ghost: found item with no system record at location |
+| `found_location_id` | INTEGER | FK → inventory_location.id | Ghost: where the item was physically found |
+| `found_item_notes` | TEXT | | Ghost: notes about the found item |
+| `ghost_resolution` | VARCHAR(50) | | Ghost: resolution action (create_record / flag_for_review / dispose) |
+| `ghost_resolved_at` | TIMESTAMP | | Ghost: when resolution was applied |
+| `ghost_resolved_by` | INTEGER | FK → users.user_id | Ghost: who resolved the ghost item |
+
+**Line status values:** `pending` → `counted` → `recount_requested` → `recounted` → `accepted` → `reconciled` (also `rejected`)
+
+**Discrepancy reasons:** `damaged`, `incorrect_labeling`, `misplaced`, `expired`, `theft_shrinkage`, `found_wrong_location`, `other`
+
+**Ghost resolution values:** `create_record` (add to inventory), `flag_for_review` (mark for further investigation), `dispose` (write off)
+
+**Indexes:**
+| Index | Columns | Type | Purpose |
+|-------|---------|------|---------|
+| `idx_scl_check` | `stock_check_id` | BTREE | Filter lines by parent check |
+| `idx_scl_item` | `item_id` | BTREE | Filter lines by item |
+| `idx_scl_location` | `location_id` | BTREE | Filter lines by location |
+| `uq_check_item_location` | `stock_check_id, item_id, location_id` | UNIQUE | Prevent duplicate item+location per check |
+| `idx_scl_ghost` | `stock_check_id, is_ghost_inventory` | BTREE | Filter ghost items per check |
+
+---
+
+### Table: `stock_check_approvals`
+
+V2: Persisted approval chain for a stock check. Levels are auto-created when check is submitted for review, based on threshold configuration.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | SERIAL | PRIMARY KEY | Unique identifier |
+| `stock_check_id` | INTEGER | FK → stock_checks.id, NOT NULL | Parent stock check |
+| `approval_level` | VARCHAR(5) | NOT NULL | L1 (Supervisor), L2 (Manager), L3 (Finance) |
+| `required` | BOOLEAN | DEFAULT TRUE | Whether this level is required for completion |
+| `status` | VARCHAR(20) | DEFAULT 'pending' | pending / approved / rejected |
+| `actioned_by` | INTEGER | FK → users.user_id | Who approved/rejected |
+| `actioned_at` | TIMESTAMP | | When actioned |
+| `notes` | TEXT | | Optional approval notes |
+| `threshold_description` | VARCHAR(200) | | Why this level was triggered |
+
+**Indexes:**
+| Index | Columns | Type | Purpose |
+|-------|---------|------|---------|
+| `uq_check_approval_level` | `stock_check_id, approval_level` | UNIQUE | One approval record per level per check |
+| `idx_sca_check` | `stock_check_id` | BTREE | Filter approvals by check |
+
+---
+
+### Table: `stock_check_threshold_config`
+
+V2: Configurable approval thresholds per warehouse. If no config exists, defaults apply.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | SERIAL | PRIMARY KEY | Unique identifier |
+| `warehouse_id` | INTEGER | FK → warehouse_site.id, UNIQUE | One config per warehouse |
+| `l1_always_required` | BOOLEAN | DEFAULT TRUE | L1 (Supervisor) always required |
+| `l2_variance_threshold` | INTEGER | DEFAULT 10 | Net variance item count to trigger L2 |
+| `l2_shrinkage_threshold` | INTEGER | DEFAULT 5 | Shrinkage item count to trigger L2 |
+| `l3_variance_threshold` | INTEGER | DEFAULT 50 | Net variance item count to trigger L3 |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | |
+| `updated_at` | TIMESTAMP | DEFAULT NOW() | |
+
+**Defaults:** L1 always required; L2 at ≥10 variance items or ≥5 shrinkage items; L3 at ≥50 variance items.
+
+---
+
+### Table: `stock_check_line_history`
+
+V2: Audit trail for every action on a stock check line.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | SERIAL | PRIMARY KEY | Unique identifier |
+| `line_id` | INTEGER | FK → stock_check_lines.id, NOT NULL | Parent line |
+| `action` | VARCHAR(50) | NOT NULL | counted, recounted, accepted, rejected, recount_flagged, reconciled, reason_set |
+| `performed_by` | INTEGER | FK → users.user_id, NOT NULL | Who performed the action |
+| `performed_at` | TIMESTAMP | DEFAULT NOW() | When performed |
+| `old_value` | VARCHAR(100) | | Previous state/value |
+| `new_value` | VARCHAR(100) | | New state/value |
+| `notes` | TEXT | | Optional context |
+
+**Indexes:**
+| Index | Columns | Type | Purpose |
+|-------|---------|------|---------|
+| `idx_sclh_line` | `line_id` | BTREE | Filter history by line |
+
+---
+
+### Table: `location_slots`
+
+Maps an item to a designated warehouse location (slotting). Each item can have multiple assigned locations. One must be primary per warehouse. ML-ready fields support future demand-based optimization.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | SERIAL | PRIMARY KEY | Unique identifier |
+| `item_id` | INTEGER | FK → items.item_id, NOT NULL | Allocated item |
+| `location_id` | INTEGER | FK → inventory_location.id, NOT NULL | Assigned location |
+| `is_primary` | BOOLEAN | DEFAULT FALSE | Primary "home" location |
+| `max_quantity` | INTEGER | | Max units at this slot (NULL = unlimited) |
+| `priority` | INTEGER | DEFAULT 0 | Pick priority (lower = first) |
+| `allocation_source` | VARCHAR(20) | DEFAULT 'manual' | Source: `manual`, `ml_suggested`, `ml_auto` |
+| `velocity_score` | FLOAT | | Units/day — ML-populated |
+| `last_optimized_at` | TIMESTAMP | | When ML last evaluated this slot |
+| `notes` | VARCHAR(500) | | Assignment notes |
+| `is_active` | BOOLEAN | DEFAULT TRUE | Soft deactivation |
+| `created_by` | INTEGER | FK → users.user_id, NOT NULL | Audit trail |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | Creation timestamp |
+| `updated_at` | TIMESTAMP | DEFAULT NOW() | Last update timestamp |
+
+**Indexes:**
+| Index | Columns | Type | Purpose |
+|-------|---------|------|---------|
+| `idx_location_slots_item` | `item_id` | BTREE | Filter slots by item |
+| `idx_location_slots_location` | `location_id` | BTREE | Filter slots by location |
+| `uq_item_location_slot` | `item_id, location_id` | UNIQUE | Prevent duplicate item+location pairs |
+| `idx_location_slots_active` | `item_id, is_active` | COMPOSITE | Active slots per item |
+
+**Alembic Migration:** `k6l7m8n9o0p1` (depends on `j5k6l7m8n9o0`) — creates `stock_checks`, `stock_check_lines`, `location_slots` tables and adds `max_capacity` + `current_utilization` columns to `inventory_location`.
+
+**Alembic Migration (V2):** `n9o0p1q2r3s4` (depends on `m8n9o0p1q2r3`) — ALTERs `stock_checks` (blind_count_enabled, recount fields, widens status), ALTERs `stock_check_lines` (first/second count, final_accepted_qty, discrepancy_reason, counted_by/recounted_by, is_reconciled, recount_requested, line_status), CREATEs `stock_check_approvals`, `stock_check_threshold_config`, `stock_check_line_history`.
+
+**Alembic Migration (Ghost Inventory):** `w8x9y0z1a2b3` (depends on `v7w8x9y0z1a2`) — ALTERs `stock_check_lines` adding ghost inventory columns (is_ghost_inventory, found_location_id, found_item_notes, ghost_resolution, ghost_resolved_at, ghost_resolved_by), creates `idx_scl_ghost` index.
+
+**Alembic Migration (Transfer Packing & Discrepancy):** `x9y0z1a2b3c4` (depends on `w8x9y0z1a2b3`) — ALTERs `warehouse_transfers` adding packing confirmation columns (packing_confirmed BOOLEAN NOT NULL DEFAULT FALSE, packing_confirmed_by FK users.user_id, packing_confirmed_at TIMESTAMP), receiver_notes (TEXT), discrepancy_report (JSON). ALTERs `warehouse_transfer_lines` adding discrepancy_reason (VARCHAR 100).
+
+### Table: `warehouse_transfers`
+
+Inter-warehouse stock transfer manifests with lifecycle management.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | INTEGER | PK, AUTO | Transfer ID |
+| `reference_number` | VARCHAR(100) | UNIQUE, INDEX | System-generated reference (e.g. TR-2026-0001) |
+| `source_warehouse_id` | INTEGER | FK → warehouse_site.id, NOT NULL | Source warehouse |
+| `destination_warehouse_id` | INTEGER | FK → warehouse_site.id, NOT NULL | Destination warehouse |
+| `status` | VARCHAR(20) | NOT NULL, DEFAULT 'draft' | Lifecycle: draft/shipped/received/completed/cancelled |
+| `notes` | TEXT | NULLABLE | General transfer notes |
+| `discrepancy_notes` | TEXT | NULLABLE | Mandatory when completing with discrepancies |
+| `source_movement_id` | INTEGER | FK → inventory_movements.id, NULLABLE | Outbound movement at source |
+| `destination_movement_id` | INTEGER | FK → inventory_movements.id, NULLABLE | Inbound movement at destination |
+| `created_by` | INTEGER | FK → users.user_id, NOT NULL | Creator |
+| `shipped_by` | INTEGER | FK → users.user_id, NULLABLE | Shipper |
+| `received_by` | INTEGER | FK → users.user_id, NULLABLE | Receiver |
+| `created_at` | TIMESTAMP | NOT NULL | Creation timestamp |
+| `shipped_at` | TIMESTAMP | NULLABLE | Ship timestamp |
+| `received_at` | TIMESTAMP | NULLABLE | Receive timestamp |
+| `completed_at` | TIMESTAMP | NULLABLE | Completion timestamp |
+| `packing_confirmed` | BOOLEAN | NOT NULL, DEFAULT FALSE | Packing confirmation gate |
+| `packing_confirmed_by` | INTEGER | FK → users.user_id, NULLABLE | Who confirmed packing |
+| `packing_confirmed_at` | TIMESTAMP | NULLABLE | When packing was confirmed |
+| `receiver_notes` | TEXT | NULLABLE | Free-text notes from receiver |
+| `discrepancy_report` | JSON | NULLABLE | JSONB snapshot of discrepant lines at completion |
+
+**Indexes:**
+
+| Index | Columns | Type | Purpose |
+|-------|---------|------|---------|
+| `idx_wt_source_warehouse` | `source_warehouse_id` | BTREE | Filter by source |
+| `idx_wt_dest_warehouse` | `destination_warehouse_id` | BTREE | Filter by destination |
+| `idx_wt_status` | `status` | BTREE | Filter by lifecycle status |
+| `idx_wt_reference` | `reference_number` | BTREE | Lookup by reference |
+| `idx_wt_created` | `created_at` | BTREE | Sort by creation date |
+
+### Table: `warehouse_transfer_lines`
+
+Individual items within a transfer manifest.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | INTEGER | PK, AUTO | Line ID |
+| `transfer_id` | INTEGER | FK → warehouse_transfers.id, NOT NULL | Parent transfer |
+| `item_id` | INTEGER | FK → items.item_id, NOT NULL | Item being transferred |
+| `source_location_id` | INTEGER | FK → inventory_location.id, NOT NULL | Source pick location |
+| `expected_quantity` | INTEGER | NOT NULL | Quantity shipped |
+| `received_quantity` | INTEGER | NULLABLE | Quantity received (NULL = not yet verified) |
+| `status` | VARCHAR(20) | DEFAULT 'pending' | pending/matched/short/over/missing |
+| `notes` | VARCHAR(500) | NULLABLE | Per-line notes |
+| `scanned_at` | TIMESTAMP | NULLABLE | When line was scanned |
+| `discrepancy_reason` | VARCHAR(100) | NULLABLE | Structured reason (damaged_in_transit, missing_from_shipment, etc.) |
+
+**Indexes:**
+
+| Index | Columns | Type | Purpose |
+|-------|---------|------|---------|
+| `idx_wtl_transfer` | `transfer_id` | BTREE | Filter lines by parent |
+| `idx_wtl_item` | `item_id` | BTREE | Filter by item |
+| `uq_transfer_item_location` | `transfer_id, item_id, source_location_id` | UNIQUE | Prevent duplicate item+location per transfer |
+
+**Alembic Migration (Variation-Level Tracking):** `cd34e5f6g7h8` (depends on `bc23d4e5f6g7`) — adds `variation_sku VARCHAR(100) DEFAULT NULL` to 7 tables: `inventory_levels`, `inventory_transactions`, `location_slots`, `warehouse_transfer_lines`, `stock_check_lines`, `receiving_lines`, `disposal_approvals`. Recreates unique indexes with `COALESCE(variation_sku, '')` pattern for correct NULL handling. Existing rows retain `variation_sku = NULL` (backward-compatible: "whole item / pooled stock").
+
+---
+
 ## Quick Reference
 
 ### Migration Commands
@@ -2783,13 +3099,13 @@ alembic downgrade -1          # Rollback one migration
 ```
 Users:           4 tables
 Items:           6 tables
-Warehouse:      11 tables
+Warehouse:      17 tables
 Orders:         10 tables
 Order Import:    2 tables (order_import schema)
 Order Operations: 6 tables
 Delivery:        9 tables
 ─────────────────────────────
-Total:          46 tables + 12 views
+Total:          52 tables + 12 views
 ```
 
 ### Common Queries
@@ -2833,3 +3149,184 @@ SELECT * FROM v_order_returns WHERE return_status = 'received' AND inspection_st
 **Alert Priority:** `out_of_stock` (1) → `critical` (2) → `low_stock` (3) → `overstock` (4)
 
 **Trip Status:** `scheduled` → `in_progress` → `completed`
+
+**Stock Check Status (V2):** `draft` → `in_progress` → `pending_review` ↔ `recount_requested` → `completed` / `cancelled`
+
+**Stock Check Line Status (V2):** `pending` → `counted` → `recount_requested` → `recounted` → `accepted` → `reconciled` (also `rejected`)
+
+**Location Slot Source:** `manual` | `ml_suggested` | `ml_auto`
+
+---
+
+## System Module
+
+### `sys_sequence_config` — Reference Number Generation Engine
+
+Configurable, segment-based reference number generation with versioned conventions, atomic counters, and per-module configuration.
+
+**Model:** `backend/app/models/system.py` → `SysSequenceConfig`
+**Migration:** `20260315_0000_00_l7m8n9o0p1q2_add_sequence_config_engine.py`
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `config_id` | SERIAL | PK | Auto-incremented ID |
+| `module_name` | VARCHAR(30) | NOT NULL, indexed | Module identifier (ITEMS, ORDER, GRN, PO, DELIVERY, INVENTORY_MOVEMENT, STOCK_LOT_BATCH, STOCK_LOT_SERIAL, STOCK_CHECK) |
+| `version` | INTEGER | NOT NULL, default 1 | Version number, increments per convention change |
+| `is_active` | BOOLEAN | NOT NULL, default FALSE | Only one active per module (partial unique index) |
+| `name` | VARCHAR(100) | NOT NULL | Human-readable label |
+| `separator` | VARCHAR(3) | NOT NULL, default '-' | Segment join character |
+| `barcode_format` | VARCHAR(20) | NOT NULL, default 'Internal' | Internal, Code-128, GS1-128, SSCC-18, QR |
+| `segments` | JSONB | NOT NULL | Ordered segment definitions array |
+| `global_seq` | INTEGER | NOT NULL, default 0 | Monotonic counter (never resets) |
+| `global_seq_offset` | INTEGER | NOT NULL, default 0 | Value at last reset (Absolute ID + Offset pattern) |
+| `padding_length` | INTEGER | NOT NULL, default 4 | Zero-pad width for sequence segment |
+| `reset_period` | VARCHAR(10) | NOT NULL, default 'NEVER' | DAILY, MONTHLY, YEARLY, NEVER |
+| `last_reset_date` | DATE | nullable | Date of last offset snapshot |
+| `is_gapless` | BOOLEAN | NOT NULL, default FALSE | Gapless mode for legally-mandated documents |
+| `auto_apply_on_create` | BOOLEAN | NOT NULL, default FALSE | Auto-generate on entity creation |
+| `gs1_company_prefix` | VARCHAR(15) | nullable | GS1-assigned company prefix (7-10 digits) |
+| `created_by` | INTEGER | FK → users.user_id | User who created this version |
+| `created_at` | TIMESTAMP | NOT NULL | Creation timestamp |
+| `updated_at` | TIMESTAMP | NOT NULL | Last update timestamp |
+
+**Indexes:**
+- `idx_sys_seq_active` — partial index on `module_name` WHERE `is_active = TRUE`
+- `uq_sys_seq_one_active_per_module` — partial unique on `module_name` WHERE `is_active = TRUE`
+
+**New fields added to existing tables (v0.5.41):**
+- `items.barcode` — VARCHAR(200), NULLABLE, UNIQUE INDEX
+- `orders.internal_order_ref` — VARCHAR(100), NULLABLE, UNIQUE INDEX (only for manual/internal orders)
+- `delivery_trips.trip_number` — VARCHAR(100), NULLABLE, UNIQUE INDEX
+- `stock_checks.reference_number` — VARCHAR(100), NULLABLE, UNIQUE INDEX
+
+**New trigger:** `prevent_master_sku_update()` — blocks master_sku changes on UPDATE (SKU immutability)
+
+---
+
+## Receiving Sessions — Schema Updates (v0.9.5)
+
+### `receiving_sessions` — New Columns
+
+**Migration:** `20260320_0000_00_u6v7w8x9y0z1`
+**WHY:** Support different inbound source types (supplier shipment, customer return, inter-warehouse), track discrepancy resolution gate before session completion.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `source_type` | VARCHAR(30) | NOT NULL, default 'supplier_shipment' | Inbound source: supplier_shipment, customer_return, inter_warehouse |
+| `linked_return_id` | INTEGER | FK → order_returns.id, NULLABLE | Links to a customer return when source_type='customer_return' |
+| `discrepancy_resolved` | BOOLEAN | NOT NULL, default false | Whether discrepancies have been acknowledged for completion |
+| `discrepancy_notes` | TEXT | NULLABLE | Manager's notes explaining how discrepancies were resolved |
+
+**Index:** `idx_receiving_sessions_source_type` — source_type
+
+### `receiving_lines` — New Columns
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `is_unexpected` | BOOLEAN | NOT NULL, default false | True if item was not in the expected manifest |
+| `unexpected_notes` | TEXT | NULLABLE | Notes about why the unexpected item was received |
+
+---
+
+## Receiving Documents (v0.9.1)
+
+### `receiving_documents`
+
+Stores file metadata for documents attached to receiving sessions or direct inventory movements (quick stock-in). Actual files stored on local filesystem in `backend/uploads/receiving/`.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | SERIAL | PK | Auto-increment primary key |
+| `session_id` | INTEGER | FK → receiving_sessions.id, NULLABLE | Link to receiving session |
+| `movement_id` | INTEGER | FK → inventory_movements.id, NULLABLE | Link to inventory movement |
+| `file_name` | VARCHAR(255) | NOT NULL | UUID-based stored filename |
+| `original_name` | VARCHAR(500) | NOT NULL | User's original filename |
+| `file_path` | VARCHAR(1000) | NOT NULL | Relative path from uploads root |
+| `file_size` | INTEGER | NOT NULL, default 0 | File size in bytes |
+| `mime_type` | VARCHAR(200) | NULLABLE | MIME type of the file |
+| `uploaded_by` | INTEGER | FK → users.user_id, NULLABLE | User who uploaded |
+| `uploaded_at` | TIMESTAMP | NOT NULL, default now() | Upload timestamp |
+
+**CHECK constraint:** `chk_rcvdoc_parent` — `session_id IS NOT NULL OR movement_id IS NOT NULL`
+
+**Indexes:**
+- `idx_rcvdoc_session` — session_id
+- `idx_rcvdoc_movement` — movement_id
+
+**Migration:** `20260318_0100_00_r3s4t5u6v7w8`
+
+---
+
+## Disposal Module (v0.9.2)
+
+### `disposal_approvals`
+
+Two-step approval workflow for stock disposal (damaged, expired, quality failure, etc.). Staff creates a request → manager approves/rejects → approved requests are executed as Write Off movements that deduct inventory.
+
+**Model:** `backend/app/models/disposal.py` → `DisposalApproval`
+**Migration:** `20260319_0000_00_s4t5u6v7w8x9`
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | SERIAL | PK | Auto-increment primary key |
+| `warehouse_id` | INTEGER | FK → warehouse.id, NOT NULL | Target warehouse |
+| `item_id` | INTEGER | FK → items.id, NOT NULL | Item to dispose |
+| `location_id` | INTEGER | FK → inventory_location.id, NULLABLE | Specific location (null = any) |
+| `movement_id` | INTEGER | FK → inventory_movements.id, NULLABLE | Linked Write Off movement (set on execute) |
+| `quantity` | INTEGER | NOT NULL | Quantity to dispose |
+| `reason` | VARCHAR(50) | NOT NULL | damaged, expired, quality_failure, obsolete, contaminated, other |
+| `status` | VARCHAR(30) | NOT NULL, default 'pending_approval' | pending_approval, approved, rejected, disposed, cancelled |
+| `request_reference` | VARCHAR(100) | NULLABLE, UNIQUE | Auto-generated reference (DISPOSAL_REQUEST sequence) |
+| `requested_by` | INTEGER | FK → users.user_id, NOT NULL | Staff who created the request |
+| `requested_at` | TIMESTAMP | NOT NULL | Request timestamp |
+| `approved_by` | INTEGER | FK → users.user_id, NULLABLE | Manager who approved/rejected |
+| `approved_at` | TIMESTAMP | NULLABLE | Approval/rejection timestamp |
+| `disposed_at` | TIMESTAMP | NULLABLE | Execution timestamp |
+| `notes` | TEXT | NULLABLE | Free-form notes |
+| `rejection_reason` | TEXT | NULLABLE | Reason for rejection |
+| `edited_items` | JSONB | NULLABLE | Quantity adjustment info (original_qty, approved_qty) |
+| `created_at` | TIMESTAMP | NOT NULL | Row creation |
+| `updated_at` | TIMESTAMP | NOT NULL | Last update |
+
+**Indexes:**
+- `idx_disposal_warehouse_status` — (warehouse_id, status)
+- `idx_disposal_requested_by` — requested_by
+- `idx_disposal_status` — status
+- `idx_disposal_item` — item_id
+- `idx_disposal_created` — created_at DESC
+
+**Statuses:** `pending_approval` → `approved` → `disposed` (terminal); `pending_approval` → `rejected` → `cancelled`; `pending_approval` → `cancelled`
+
+---
+
+## Functional Zone Configuration (v0.9.3)
+
+### `functional_zone_config`
+
+Per-warehouse functional zone definitions. Maps logical zones (Returns Processing, Shipping, Quarantine, etc.) to physical location hierarchy segments (sections and zones). Replaces the localStorage-based approach with persistent, server-side configuration.
+
+**Model:** `backend/app/models/warehouse.py` → `FunctionalZoneConfig`
+**Migration:** `20260319_0100_00_t5u6v7w8x9y0`
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | SERIAL | PK | Auto-increment primary key |
+| `warehouse_id` | INTEGER | FK → warehouse.id (CASCADE), NOT NULL | Target warehouse |
+| `zone_key` | VARCHAR(50) | NOT NULL | Unique key per warehouse (e.g. 'returns', 'shipping') |
+| `zone_name` | VARCHAR(100) | NOT NULL | Display name |
+| `description` | TEXT | NULLABLE | Zone description |
+| `color` | VARCHAR(200) | NULLABLE | Tailwind CSS class string for card styling |
+| `icon` | VARCHAR(50) | NULLABLE | MUI icon name |
+| `mapped_sections` | JSONB | NOT NULL, default '[]' | Array of warehouse_section names mapped to this zone |
+| `mapped_zones` | JSONB | NOT NULL, default '[]' | Array of zone names mapped to this functional zone |
+| `is_active` | BOOLEAN | NOT NULL, default TRUE | Whether zone is active |
+| `sort_order` | INTEGER | NOT NULL, default 0 | Display order |
+| `created_at` | TIMESTAMP | NOT NULL | Row creation |
+| `updated_at` | TIMESTAMP | NOT NULL | Last update |
+
+**Constraints:**
+- `uq_zone_warehouse_key` — UNIQUE(warehouse_id, zone_key)
+
+**Indexes:**
+- `idx_fzc_warehouse` — warehouse_id
+- `idx_fzc_active` — (warehouse_id, is_active)
